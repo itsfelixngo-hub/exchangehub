@@ -33,6 +33,8 @@ jobs:
             NGINX_UPSTREAM_CONF="${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}"
 
             cd "$APP_DIR"
+            git fetch origin main
+            git reset --hard origin/main
 
             cat > .env <<'EOF'
             ${{ secrets.PROD_ENV }}
