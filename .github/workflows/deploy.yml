@@ -1,0 +1,37 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            APP_DIR="${{ secrets.APP_DIR || '/home/deploy/exchangehub' }}"
+            cd "$APP_DIR"
+
+            cat > .env <<'EOF'
+            ${{ secrets.PROD_ENV }}
+            EOF
+
+            chmod +x scripts/deploy_blue_green.sh
+            APP_DIR="$APP_DIR" BRANCH="main" scripts/deploy_blue_green.sh

@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+!.env.sample
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+venv
+wp-content/uploads
+rates.db
+fetch.log

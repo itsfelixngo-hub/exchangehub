@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  web:
+    container_name: exchangehub-web
+    image: exchangehub-web:latest
+    build: .
+    command: python app.py
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./:/app:rw
+      - ${UPLOADS_HOST_PATH:-./wp-content/uploads}:/app/wp-content/uploads:rw
+    environment:
+      - FLASK_ENV=production
+      - R2_ENABLED=${R2_ENABLED:-}
+      - LOCAL_STORAGE_ENABLED=${LOCAL_STORAGE_ENABLED:-true}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
+      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL:-}
+      - R2_BUCKET=${R2_BUCKET:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_PREFIX=${R2_PREFIX:-}
+      - R2_CACHE_CONTROL=${R2_CACHE_CONTROL:-public, max-age=60}
+      - R2_CONNECT_TIMEOUT=${R2_CONNECT_TIMEOUT:-3}
+      - R2_READ_TIMEOUT=${R2_READ_TIMEOUT:-8}
+      - R2_MAX_ATTEMPTS=${R2_MAX_ATTEMPTS:-2}
+      - R2_READ_CACHE_SECONDS=${R2_READ_CACHE_SECONDS:-60}
+      - PAGE_CACHE_SECONDS=${PAGE_CACHE_SECONDS:-60}
+
+  fetcher:
+    container_name: exchangehub-fetcher
+    image: exchangehub-fetcher:latest
+    build: .
+    command: /app/fetch_entrypoint.sh
+    volumes:
+      - ./:/app:rw
+      - ${UPLOADS_HOST_PATH:-./wp-content/uploads}:/app/wp-content/uploads:rw
+    environment:
+      - OPENEXCHANGE_APP_ID=${OPENEXCHANGE_APP_ID:-}
+      - OPENEXCHANGE_APP_IDS=${OPENEXCHANGE_APP_IDS}
+      - HTTP_PROXY=${FETCHER_HTTP_PROXY:-}
+      - HTTPS_PROXY=${FETCHER_HTTPS_PROXY:-}
+      - NO_PROXY=${FETCHER_NO_PROXY:-localhost,127.0.0.1}
+      - WP_UPLOADS=/app/wp-content/uploads
+      - R2_ENABLED=${R2_ENABLED:-}
+      - LOCAL_STORAGE_ENABLED=${LOCAL_STORAGE_ENABLED:-true}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
+      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL:-}
+      - R2_BUCKET=${R2_BUCKET:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_PREFIX=${R2_PREFIX:-}
+      - R2_CACHE_CONTROL=${R2_CACHE_CONTROL:-public, max-age=60}
+      - R2_CONNECT_TIMEOUT=${R2_CONNECT_TIMEOUT:-3}
+      - R2_READ_TIMEOUT=${R2_READ_TIMEOUT:-8}
+      - R2_MAX_ATTEMPTS=${R2_MAX_ATTEMPTS:-2}
+      - R2_READ_CACHE_SECONDS=${R2_READ_CACHE_SECONDS:-60}
+      - PAGE_CACHE_SECONDS=${PAGE_CACHE_SECONDS:-60}
+    restart: unless-stopped

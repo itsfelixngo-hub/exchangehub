@@ -1,0 +1,433 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Exchange Rates Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root { --page-gutter: clamp(12px, 1.6vw, 26px); --shell-width: 100%; }
+      body { font-family: Arial, sans-serif; margin: 0; color:#1f2933; background:#fff; }
+      main { width:var(--shell-width); box-sizing:border-box; margin:0 auto; padding:16px var(--page-gutter) 22px; }
+      .site-header { border-bottom:1px solid #e5e7eb; background:#fff; position:sticky; top:0; z-index:10; }
+      .site-nav { width:var(--shell-width); box-sizing:border-box; margin:0 auto; padding:clamp(9px, 1vw, 14px) var(--page-gutter); display:flex; align-items:center; justify-content:space-between; gap:clamp(12px, 1.4vw, 22px); }
+      .brand { font-weight:800; color:#1f2933; text-decoration:none; font-size:clamp(18px, 1.25vw, 22px); white-space:nowrap; }
+      .brand-lockup { display:inline-flex; align-items:center; gap:9px; white-space:nowrap; }
+      .brand-mark { width:32px; height:32px; display:block; flex:0 0 32px; }
+      .brand-name { letter-spacing:0; }
+      .header-links { display:flex; gap:clamp(6px, .7vw, 10px); align-items:center; flex-wrap:wrap; margin-left:auto; justify-content:flex-end; }
+      .header-links a { color:#475467; text-decoration:none; border:1px solid #e5e7eb; border-radius:999px; padding:clamp(5px, .55vw, 7px) clamp(8px, .8vw, 11px); font-size:clamp(12px, .85vw, 14px); line-height:1; background:#fff; }
+      .header-links a:hover { color:#1f2933; border-color:#d0d7de; background:#f8fafc; }
+      .translate-widget { position:relative; min-width:40px; }
+      .translate-toggle { border:1px solid #d0d7de; border-radius:999px; background:#fff; width:42px; height:34px; display:inline-flex; align-items:center; justify-content:center; gap:3px; cursor:pointer; font-size:17px; line-height:1; box-shadow:0 1px 2px rgba(15,23,42,.04); transition:background-color .16s ease-in-out, border-color .16s ease-in-out, transform .16s ease-in-out; }
+      .translate-toggle::after { content:""; width:5px; height:5px; border-right:1.6px solid #475467; border-bottom:1.6px solid #475467; transform:translateY(-1px) rotate(45deg); transition:transform .18s ease-in-out; }
+      .translate-widget.is-open .translate-toggle::after { transform:translateY(1px) rotate(225deg); }
+      .translate-toggle:hover { background:#f8fafc; border-color:#bcc9d6; transform:translateY(-1px); }
+      .translate-menu { display:none; position:absolute; right:0; top:calc(100% + 8px); z-index:1100; width:180px; max-height:min(320px,58vh); overflow:auto; padding:8px; border:1px solid #d0d7de; border-radius:10px; background:#fff; box-shadow:0 16px 40px rgba(15,23,42,.14); }
+      .translate-widget.is-open .translate-menu { display:grid; gap:4px; }
+      .translate-option { border:0; background:transparent; border-radius:8px; padding:7px 8px; display:flex; align-items:center; gap:8px; color:#1f2933; cursor:pointer; text-align:left; font-size:13px; }
+      .translate-option:hover { background:#f8fafc; }
+      .translate-flag { width:22px; text-align:center; font-size:17px; line-height:1; }
+      .translate-native { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
+      body > .skiptranslate, iframe.skiptranslate { display:none !important; }
+      body { top:0 !important; }
+      .chart-toolbar { display:grid; grid-template-columns:minmax(260px,1fr) auto; gap:16px; align-items:end; margin-bottom:12px; }
+      h2 { margin:0 0 6px; font-size:clamp(22px, 1.8vw, 32px); }
+      .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:end; justify-content:flex-end; margin-bottom:0; }
+      .controls label { display:block; color:#475467; font-size:12px; font-weight:700; letter-spacing:.01em; }
+      .controls select, .controls button {
+        box-sizing:border-box;
+        display:block;
+        margin-top:5px;
+        min-width:112px;
+        height:38px;
+        border:1px solid #cfd8e3;
+        border-radius:8px;
+        background:#fff;
+        color:#1f2933;
+        font-size:14px;
+        line-height:1.2;
+        padding:8px 10px;
+        outline:none;
+        transition:border-color .16s ease-in-out, box-shadow .16s ease-in-out, background-color .16s ease-in-out;
+      }
+      .controls select {
+        appearance:none;
+        -webkit-appearance:none;
+        padding-right:42px;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.5L10 12l4.5-4.5' stroke='%23475467' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat:no-repeat;
+        background-position:right 13px center;
+        background-size:14px 14px;
+      }
+      .controls select:hover, .controls button:hover { border-color:#bcc9d6; background:#f8fafc; }
+      .controls select:focus, .controls button:focus { border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,.18); }
+      .controls button { cursor:pointer; font-weight:700; }
+      #status { min-height: 20px; margin:0 0 10px; color: #555; font-size:14px; }
+      .chart-wrap { border:1px solid #e5e7eb; border-radius:8px; padding:clamp(10px, 1vw, 16px); height:min(60vh, 580px); min-height:340px; }
+      .chart-wrap canvas { width:100% !important; height:100% !important; }
+      .chart-note { color:#667085; font-size:14px; line-height:1.5; margin:0; max-width:760px; }
+      .site-footer { border-top:1px solid #d8dee6; background:#f8fafc; margin-top:10px; }
+      .footer-inner { width:var(--shell-width); box-sizing:border-box; margin:0 auto; padding:10px var(--page-gutter); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; color:#667085; font-size:13px; }
+      .footer-inner a { color:#475467; text-decoration:none; }
+      .footer-inner a:hover { color:#1f2933; text-decoration:underline; }
+      @media(max-width:1100px){
+        .site-nav{flex-wrap:wrap}
+        .header-links{order:3; flex:1 1 100%; margin-left:0; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; justify-content:flex-start}
+        .header-links a{flex:0 0 auto}
+        .chart-toolbar{grid-template-columns:1fr;align-items:start}
+        .controls{justify-content:flex-start}
+      }
+      @media(max-width:760px){
+        main{padding:14px var(--page-gutter) 22px}
+        .header-links{display:none}
+        .chart-toolbar{gap:12px}
+        .controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch;width:100%}
+        .controls label{min-width:0}
+        .controls select,.controls button{width:100%;box-sizing:border-box;min-width:0}
+        .chart-wrap{height:50vh;min-height:300px}
+      }
+      @media(max-width:520px){
+        :root{--page-gutter:12px}
+        .site-nav{padding:8px var(--page-gutter);gap:10px}
+        .brand{font-size:16px}
+        .brand-mark{width:28px;height:28px;flex-basis:28px}
+        .controls{grid-template-columns:1fr}
+        h2{font-size:22px}
+        .chart-wrap{height:48vh;min-height:280px;padding:8px}
+        .footer-inner{display:block}
+        .footer-inner span{display:block;margin:0 0 6px}
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="site-nav">
+        <a class="brand" href="/">
+          <span class="brand-lockup" aria-label="ExchangeHub">
+            <svg class="brand-mark" viewBox="0 0 40 40" role="img" aria-hidden="true" focusable="false">
+              <rect x="2" y="2" width="36" height="36" rx="10" fill="#111827"/>
+              <circle cx="20" cy="20" r="4.2" fill="#f0b90b"/>
+              <circle cx="20" cy="8.5" r="3.2" fill="#f0b90b"/>
+              <circle cx="31.5" cy="20" r="3.2" fill="#f0b90b"/>
+              <circle cx="20" cy="31.5" r="3.2" fill="#f0b90b"/>
+              <circle cx="8.5" cy="20" r="3.2" fill="#f0b90b"/>
+              <path d="M14.2 15.2h9.4l-2.4-2.4 2-2 5.9 5.9-5.9 5.9-2-2 2.4-2.4h-9.4z" fill="#22c55e"/>
+              <path d="M25.8 24.8h-9.4l2.4 2.4-2 2-5.9-5.9 5.9-5.9 2 2-2.4 2.4h9.4z" fill="#38bdf8"/>
+            </svg>
+            <span class="brand-name">ExchangeHub</span>
+          </span>
+        </a>
+        <div class="header-links">
+          <a href="/usd-vnd">USD/VND</a>
+          <a href="/vnd-usd">VND/USD</a>
+          <a href="/eur-usd">EUR/USD</a>
+          <a href="/usd-jpy">USD/JPY</a>
+          <a href="/gbp-usd">GBP/USD</a>
+          <a href="/usd-cny">USD/CNY</a>
+        </div>
+        <div class="translate-widget" aria-label="Translate page">
+          <button class="translate-toggle" type="button" aria-label="Translate page" aria-expanded="false">🌐</button>
+          <div class="translate-menu" role="menu">
+            <button class="translate-option" type="button" data-lang="en"><span class="translate-flag">🇺🇸</span><span>English</span></button>
+            <button class="translate-option" type="button" data-lang="vi"><span class="translate-flag">🇻🇳</span><span>Tiếng Việt</span></button>
+            <button class="translate-option" type="button" data-lang="th"><span class="translate-flag">🇹🇭</span><span>ไทย</span></button>
+            <button class="translate-option" type="button" data-lang="ja"><span class="translate-flag">🇯🇵</span><span>日本語</span></button>
+            <button class="translate-option" type="button" data-lang="ko"><span class="translate-flag">🇰🇷</span><span>한국어</span></button>
+            <button class="translate-option" type="button" data-lang="zh-CN"><span class="translate-flag">🇨🇳</span><span>中文</span></button>
+          </div>
+          <div id="google_translate_element" class="translate-native"></div>
+        </div>
+      </nav>
+    </header>
+    <main>
+    <div class="chart-toolbar">
+      <div>
+        <h2>Exchange Rates (every 5 minutes)</h2>
+        <p class="chart-note">This tool reads the locally stored exchange-rate history and polls for the latest stored point every 30 seconds.</p>
+      </div>
+      <div class="controls">
+        <label>Base
+          <select id="base"></select>
+        </label>
+        <label>Target
+          <select id="target"></select>
+        </label>
+        <label>Range
+          <select id="hours">
+            <option value="all">All</option>
+            <option value="24">24 hours</option>
+            <option value="48">48 hours</option>
+            <option value="168">7 days</option>
+          </select>
+        </label>
+        <button id="load">Load</button>
+      </div>
+    </div>
+    <div id="status"></div>
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    </main>
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <span>ExchangeHub chart tool. Rates are informational references only.</span>
+        <span><a href="/">Dashboard</a> · <a href="/privacy-policy/">Privacy Policy</a> · <a href="/disclaimer/">Disclaimer</a></span>
+      </div>
+    </footer>
+    <script>
+      const ctx = document.getElementById('chart').getContext('2d');
+      const status = document.getElementById('status');
+      const timeFormatter = new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'UTC',
+        timeZoneName: 'short'
+      });
+      const updatedFormatter = new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'UTC',
+        timeZoneName: 'short'
+      });
+      function formatRate(value){
+        const n = Number(value);
+        if(!Number.isFinite(n)) return value;
+        if(n === 0) return '0';
+        const abs = Math.abs(n);
+        if(abs < 0.000001) return n.toExponential(6);
+        if(abs < 1) return n.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+        if(abs < 1000) return n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+        return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+      }
+      function significantPointLabelIndexes(values, maxLabels = 4){
+        const changes = [];
+        for(let index = 1; index < values.length; index += 1) {
+          const current = Number(values[index]);
+          const previous = Number(values[index - 1]);
+          if(!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) continue;
+          changes.push({ index, change: Math.abs((current - previous) / previous) });
+        }
+        changes.sort((a, b) => b.change - a.change);
+        const strongest = changes[0]?.change || 0;
+        const minChange = Math.max(0.0005, strongest * 0.35);
+        const selected = [];
+        for(const item of changes) {
+          if(item.change < minChange) break;
+          if(selected.some(index => Math.abs(index - item.index) <= 1)) continue;
+          selected.push(item.index);
+          if(selected.length >= maxLabels) break;
+        }
+        return new Set(selected);
+      }
+      function trendColor(values){
+        const nums = values.map(Number).filter(Number.isFinite);
+        if(nums.length < 2) return '#2563eb';
+        const first = nums[0];
+        const last = nums[nums.length - 1];
+        if(first === 0) return '#2563eb';
+        const change = (last - first) / first;
+        if(change > 0.0001) return '#16a34a';
+        if(change < -0.0001) return '#dc2626';
+        return '#2563eb';
+      }
+      const latestValueBadge = {
+        id: 'latestValueBadge',
+        afterDatasetsDraw(chart) {
+          const { ctx, chartArea } = chart;
+          const dataset = chart.data.datasets[0];
+          if(!dataset || !dataset.data.length) return;
+          const value = Number(dataset.data[dataset.data.length - 1]);
+          if(!Number.isFinite(value)) return;
+          const y = chart.scales.y.getPixelForValue(value);
+          const color = dataset.borderColor || '#2563eb';
+          const label = formatRate(value);
+          ctx.save();
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = 'rgba(37, 99, 235, 0.38)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, y);
+          ctx.lineTo(chartArea.right, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = 'bold 12px Arial, sans-serif';
+          const paddingX = 8;
+          const width = ctx.measureText(label).width + paddingX * 2;
+          const height = 24;
+          const x = Math.min(Math.max(chartArea.right - width - 8, chartArea.left), chartArea.right - width);
+          const boxY = Math.max(chartArea.top, Math.min(y - height / 2, chartArea.bottom - height));
+          ctx.fillStyle = color;
+          ctx.fillRect(x, boxY, width, height);
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, x + width / 2, boxY + height / 2);
+          ctx.restore();
+        }
+      };
+      function chartAreaGradient(context){
+        const chart = context.chart;
+        const area = chart.chartArea;
+        if(!area) return 'rgba(37, 99, 235, 0.16)';
+        const gradient = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        gradient.addColorStop(0, 'rgba(37, 99, 235, 0.28)');
+        gradient.addColorStop(0.7, 'rgba(37, 99, 235, 0.10)');
+        gradient.addColorStop(1, 'rgba(37, 99, 235, 0.03)');
+        return gradient;
+      }
+      let chart = new Chart(ctx, {
+        type: 'line',
+        plugins: [latestValueBadge],
+        data: {
+          labels: [],
+          datasets: [{ label: 'Rate', data: [], borderColor: '#0b7cff', backgroundColor: chartAreaGradient, fill: true, tension: 0.18, pointRadius: 0, pointHoverRadius: 3, borderWidth: 1.8 }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: context => `${context.dataset.label}: ${formatRate(context.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
+            y: { position: 'right', beginAtZero: false, grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 4, padding: 8, color: '#667085', callback: value => formatRate(value) } }
+          }
+        }
+      });
+
+      let currentPair = null;
+      let lastTs = 0;
+
+      function updatedText(tsMs){
+        if(!tsMs) return 'Updated when data is available.';
+        return `Updated ${updatedFormatter.format(new Date(tsMs))}.`;
+      }
+
+      async function loadCurrencies(){
+        const baseSelect = document.getElementById('base');
+        const targetSelect = document.getElementById('target');
+        const res = await fetch('/api/currencies');
+        const j = await res.json();
+        const currencies = j.currencies && j.currencies.length ? j.currencies : ['USD', 'VND'];
+        baseSelect.innerHTML = currencies.map(code => `<option>${code}</option>`).join('');
+        targetSelect.innerHTML = currencies.map(code => `<option>${code}</option>`).join('');
+        baseSelect.value = 'USD';
+        if(currencies.includes('VND')) targetSelect.value = 'VND';
+      }
+
+      async function load(){
+        const base = document.getElementById('base').value;
+        const target = document.getElementById('target').value;
+        const hours = document.getElementById('hours').value;
+        currentPair = `${base}-${target}`;
+        const res = await fetch(`/api/history?base=${base}&target=${target}&hours=${hours}`);
+        if(!res.ok){ alert('No data'); return }
+        const j = await res.json();
+        let points = j.data.map(d => ({ x: d.ts * 1000, y: d.rate }));
+        if(!points.length){
+          const latestRes = await fetch(`/api/latest?base=${base}&target=${target}`);
+          if(latestRes.ok){
+            const latest = await latestRes.json();
+            points = [{ x: latest.ts * 1000, y: latest.rate }];
+          }
+        }
+        if(points.length) lastTs = points[points.length-1].x;
+        chart.data.labels = points.map(p => timeFormatter.format(new Date(p.x)));
+        chart.data.datasets[0].label = `${base} to ${target}`;
+        chart.data.datasets[0].data = points.map(p => p.y);
+        chart.data.datasets[0].borderColor = trendColor(chart.data.datasets[0].data);
+        chart.data.datasets[0].backgroundColor = chartAreaGradient;
+        chart.update();
+        status.textContent = points.length ? `${points.length} point(s) loaded. ${updatedText(lastTs)}` : `No ${base} to ${target} data found.`;
+      }
+
+      async function pollLatest(){
+        if(!currentPair) return;
+        const [base,target] = currentPair.split('-');
+        try{
+          const res = await fetch(`/api/latest?base=${base}&target=${target}`);
+          if(!res.ok) return;
+          const j = await res.json();
+          const tsMs = j.ts * 1000;
+          if(tsMs > lastTs){
+            lastTs = tsMs;
+            chart.data.labels.push(timeFormatter.format(new Date(tsMs)));
+            chart.data.datasets[0].data.push(j.rate);
+            chart.data.datasets[0].borderColor = trendColor(chart.data.datasets[0].data);
+            chart.data.datasets[0].backgroundColor = chartAreaGradient;
+            chart.update();
+            status.textContent = `Updated with the latest rate. ${updatedText(lastTs)}`;
+          }
+        }catch(e){ }
+      }
+
+      document.getElementById('load').addEventListener('click', load);
+      loadCurrencies().then(load);
+      setInterval(pollLatest, 30000);
+    </script>
+    <script>
+      function setTranslateCookie(value) {
+        const maxAge = value ? '; max-age=31536000' : '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        document.cookie = `googtrans=${value || ''}; path=/${maxAge}`;
+        if (location.hostname.includes('.')) {
+          document.cookie = `googtrans=${value || ''}; path=/; domain=.${location.hostname}${maxAge}`;
+        }
+      }
+      function applyTranslation(lang) {
+        const combo = document.querySelector('.goog-te-combo');
+        if (lang === 'en') {
+          setTranslateCookie('');
+          location.reload();
+          return;
+        }
+        setTranslateCookie(`/en/${lang}`);
+        if (combo) {
+          combo.value = lang;
+          combo.dispatchEvent(new Event('change'));
+        } else {
+          location.reload();
+        }
+      }
+      function initTranslateMenu() {
+        document.querySelectorAll('.translate-widget').forEach(widget => {
+          if (widget.dataset.translateReady === '1') return;
+          widget.dataset.translateReady = '1';
+          const toggle = widget.querySelector('.translate-toggle');
+          toggle.addEventListener('click', event => {
+            event.stopPropagation();
+            const open = !widget.classList.contains('is-open');
+            document.querySelectorAll('.translate-widget.is-open').forEach(item => item.classList.remove('is-open'));
+            widget.classList.toggle('is-open', open);
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+          widget.querySelectorAll('[data-lang]').forEach(button => {
+            button.addEventListener('click', () => applyTranslation(button.dataset.lang));
+          });
+        });
+        document.addEventListener('click', () => {
+          document.querySelectorAll('.translate-widget.is-open').forEach(widget => {
+            widget.classList.remove('is-open');
+            const toggle = widget.querySelector('.translate-toggle');
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+          });
+        });
+      }
+      function googleTranslateElementInit() {
+        new google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false, layout: google.translate.TranslateElement.InlineLayout.HORIZONTAL }, 'google_translate_element');
+        initTranslateMenu();
+      }
+      document.addEventListener('DOMContentLoaded', initTranslateMenu);
+    </script>
+    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+  </body>
+</html>

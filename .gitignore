@@ -1,0 +1,5 @@
+.env
+__pycache__/
+*.pyc
+rates.db
+wp-content/uploads/
