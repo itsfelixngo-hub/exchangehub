@@ -14,6 +14,7 @@ GUNICORN_WORKERS="${GUNICORN_WORKERS:-}"
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
+STATE_DIR="${STATE_DIR:-${APP_DIR}/.deploy-state}"
 
 cd "$APP_DIR"
 
@@ -99,12 +100,15 @@ printf "%s" "$new_color" > "$ACTIVE_FILE"
 docker rm -f "$old_container" >/dev/null 2>&1 || true
 
 docker rm -f "$fetcher_container" >/dev/null 2>&1 || true
+mkdir -p "$STATE_DIR"
 docker run -d \
   --name "$fetcher_container" \
   --restart unless-stopped \
   --network "$NETWORK_NAME" \
   --env-file .env \
   -e FLASK_ENV=production \
+  -e OXR_APP_ID_STATE_FILE=/app/.deploy-state/openexchange_app_ids_state.json \
+  -v "$STATE_DIR:/app/.deploy-state" \
   "$image" \
   /app/fetch_entrypoint.sh
 
