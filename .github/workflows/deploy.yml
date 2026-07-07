@@ -26,7 +26,12 @@ jobs:
           script: |
             set -euo pipefail
 
-            APP_DIR="${{ secrets.APP_DIR || '/home/deploy/exchangehub' }}"
+            APP_NAME="${{ secrets.APP_NAME || 'exchangehub' }}"
+            APP_DIR="${{ secrets.APP_DIR || '/home/deploy/apps/exchangehub' }}"
+            BLUE_PORT="${{ secrets.BLUE_PORT || '5001' }}"
+            GREEN_PORT="${{ secrets.GREEN_PORT || '5002' }}"
+            NGINX_UPSTREAM_CONF="${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}"
+
             cd "$APP_DIR"
 
             cat > .env <<'EOF'
@@ -34,4 +39,10 @@ jobs:
             EOF
 
             chmod +x scripts/deploy_blue_green.sh
-            APP_DIR="$APP_DIR" BRANCH="main" scripts/deploy_blue_green.sh
+            APP_NAME="$APP_NAME" \
+            APP_DIR="$APP_DIR" \
+            BLUE_PORT="$BLUE_PORT" \
+            GREEN_PORT="$GREEN_PORT" \
+            NGINX_UPSTREAM_CONF="$NGINX_UPSTREAM_CONF" \
+            BRANCH="main" \
+            scripts/deploy_blue_green.sh

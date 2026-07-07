@@ -2,14 +2,14 @@
 set -euo pipefail
 
 APP_NAME="${APP_NAME:-exchangehub}"
-APP_DIR="${APP_DIR:-/home/deploy/exchangehub}"
+APP_DIR="${APP_DIR:-/home/deploy/apps/exchangehub}"
 BRANCH="${BRANCH:-main}"
 IMAGE_TAG="${IMAGE_TAG:-}"
-NETWORK_NAME="${NETWORK_NAME:-exchangehub_net}"
+NETWORK_NAME="${NETWORK_NAME:-${APP_NAME}_net}"
 BLUE_PORT="${BLUE_PORT:-5001}"
 GREEN_PORT="${GREEN_PORT:-5002}"
 ACTIVE_FILE="${ACTIVE_FILE:-.deploy-active-color}"
-NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/exchangehub-upstream.conf}"
+NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/${APP_NAME}-upstream.conf}"
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-}"
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
