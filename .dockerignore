@@ -1,5 +1,10 @@
 .git
 .github
+.agents
+.codex
+.deploy-state
+.github-state
+.*-state
 .env
 .env.*
 !.env.sample
