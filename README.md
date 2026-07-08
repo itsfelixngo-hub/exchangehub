@@ -219,7 +219,26 @@ R2_PREFIX=
 R2_READ_CACHE_SECONDS=300
 PAGE_CACHE_SECONDS=300
 GUNICORN_WORKERS=2
+FLASK_SECRET_KEY=GENERATE_A_LONG_RANDOM_SECRET
+SITE_CONTACT_EMAIL=contact@ratehubfx.com
+CONTACT_FORWARD_TO=test.noreply909@gmail.com
+CONTACT_FROM_EMAIL=contact@ratehubfx.com
+CONTACT_SMTP_HOST=smtp.your-mail-provider.com
+CONTACT_SMTP_PORT=587
+CONTACT_SMTP_USER=contact@ratehubfx.com
+CONTACT_SMTP_PASSWORD=YOUR_SMTP_PASSWORD
+CONTACT_SMTP_USE_TLS=true
+CONTACT_ROTATION_TOLERANCE=8
 ```
+
+Contact form mail setup:
+
+- Create a mailbox or SMTP relay for `contact@ratehubfx.com`.
+- Point the domain MX record to the mail provider.
+- Add the provider SPF TXT record for the domain.
+- Add DKIM TXT/CNAME records from the provider.
+- Add a DMARC TXT record, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"`.
+- Keep `CONTACT_FORWARD_TO=test.noreply909@gmail.com` so site submissions are forwarded to that Gmail address.
 
 One-time VPS bootstrap:
 
@@ -321,4 +340,3 @@ WP plugin (module) usage
 - A simple plugin module is included at `wp-plugin-exchange/exchange-plugin.php`. To use it in your WordPress site, copy the `wp-plugin-exchange` folder into `wp-content/plugins/` and activate the plugin.
 - Create posts of type "Exchange Pages" (in admin menu) for per-pair content. Use slugs like `vnd-usd` to match pair names.
 - Place the shortcode `[exchange_rates_tabs]` on your homepage or any page to display the tabbed chart module. The module reads `rates.json` from the uploads folder to render charts.
-

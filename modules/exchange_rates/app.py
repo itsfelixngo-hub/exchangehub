@@ -1,8 +1,15 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template_string, Response, redirect
+from flask import Flask, request, jsonify, send_from_directory, render_template_string, Response, redirect, session
+from werkzeug.middleware.proxy_fix import ProxyFix
+from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 import sqlite3
 import time
 import os
 import json
+import re
+import secrets
+import smtplib
+import ssl
 from html import escape
 
 try:
@@ -26,6 +33,145 @@ _HOME_PAGE_CACHE = {}
 _PAIR_PAGE_CACHE = {}
 
 app = Flask(__name__, static_folder=os.path.join(MODULE_DIR, "static"))
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+
+CONTACT_EMAIL = os.environ.get("SITE_CONTACT_EMAIL", "contact@ratehubfx.com")
+CONTACT_FORWARD_TO = os.environ.get("CONTACT_FORWARD_TO", "test.noreply909@gmail.com")
+CONTACT_FROM_EMAIL = os.environ.get("CONTACT_FROM_EMAIL", CONTACT_EMAIL)
+CONTACT_SMTP_HOST = os.environ.get("CONTACT_SMTP_HOST", "")
+CONTACT_SMTP_PORT = int(os.environ.get("CONTACT_SMTP_PORT", "587"))
+CONTACT_SMTP_USER = os.environ.get("CONTACT_SMTP_USER", "")
+CONTACT_SMTP_PASSWORD = os.environ.get("CONTACT_SMTP_PASSWORD", "")
+CONTACT_SMTP_USE_TLS = os.environ.get("CONTACT_SMTP_USE_TLS", "true").lower() not in {"0", "false", "no"}
+CONTACT_RATE_LIMIT_SECONDS = int(os.environ.get("CONTACT_RATE_LIMIT_SECONDS", "60"))
+CONTACT_MIN_SUBMIT_SECONDS = int(os.environ.get("CONTACT_MIN_SUBMIT_SECONDS", "3"))
+CONTACT_ROTATION_TOLERANCE = int(os.environ.get("CONTACT_ROTATION_TOLERANCE", "8"))
+_CONTACT_RATE_LIMIT = {}
+
+ROBOTS_DISALLOW_PATHS = [
+    "/.env",
+    "/.git",
+    "/wp-login.php",
+    "/wp-admin",
+    "/xmlrpc.php",
+    "/wp-content",
+    "/wp-includes",
+    "/phpmyadmin",
+    "/adminer",
+    "/vendor",
+]
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+ROBOTS_INDEX_DIRECTIVES = "index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"
+
+
+@app.after_request
+def add_robots_header(response):
+    if response.status_code == 200 and response.mimetype == "text/html":
+        response.headers["X-Robots-Tag"] = ROBOTS_INDEX_DIRECTIVES
+    return response
+
+
+def get_client_ip():
+    return request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+
+
+def new_contact_challenge():
+    rotation = (secrets.randbelow(23) + 1) * 15
+    session["contact_rotation_start"] = rotation
+    session["contact_rotation_answer"] = (360 - rotation) % 360
+    session["contact_form_token"] = secrets.token_urlsafe(24)
+    session["contact_form_started_at"] = time.time()
+    return rotation, session["contact_form_token"]
+
+
+def prepare_contact_form():
+    return new_contact_challenge()
+
+
+def angular_distance(left, right):
+    return abs((left - right + 180) % 360 - 180)
+
+
+def contact_rate_limited(ip):
+    now = time.time()
+    last_submit = _CONTACT_RATE_LIMIT.get(ip, 0)
+    return now - last_submit < CONTACT_RATE_LIMIT_SECONDS
+
+
+def mark_contact_submitted(ip):
+    _CONTACT_RATE_LIMIT[ip] = time.time()
+
+
+def validate_contact_submission(form):
+    errors = []
+    name = form.get("name", "").strip()
+    email = form.get("email", "").strip()
+    subject = form.get("subject", "").strip()
+    message = form.get("message", "").strip()
+    rotation_response = form.get("rotation_response", "").strip()
+    token = form.get("form_token", "").strip()
+    website = form.get("website", "").strip()
+
+    if website:
+        errors.append("Spam check failed.")
+    if not secrets.compare_digest(token, session.get("contact_form_token", "")):
+        errors.append("The form expired. Please try again.")
+    if time.time() - float(session.get("contact_form_started_at", 0)) < CONTACT_MIN_SUBMIT_SECONDS:
+        errors.append("Please take a moment before submitting the form.")
+    try:
+        rotation_value = int(float(rotation_response))
+    except (TypeError, ValueError):
+        rotation_value = None
+    if rotation_value is None or angular_distance(rotation_value, int(session.get("contact_rotation_answer", -999))) > CONTACT_ROTATION_TOLERANCE:
+        errors.append("The rotation check is incorrect.")
+    if len(name) < 2 or len(name) > 80:
+        errors.append("Name must be between 2 and 80 characters.")
+    if not EMAIL_RE.match(email) or len(email) > 120:
+        errors.append("Enter a valid email address.")
+    if len(subject) < 3 or len(subject) > 140:
+        errors.append("Subject must be between 3 and 140 characters.")
+    if len(message) < 20 or len(message) > 4000:
+        errors.append("Message must be between 20 and 4000 characters.")
+
+    clean = {"name": name, "email": email, "subject": subject, "message": message}
+    return errors, clean
+
+
+def send_contact_email(data):
+    if not CONTACT_SMTP_HOST:
+        raise RuntimeError("CONTACT_SMTP_HOST is not configured")
+
+    msg = EmailMessage()
+    msg["Subject"] = f"ExchangeHub contact: {data['subject']}"
+    msg["From"] = CONTACT_FROM_EMAIL
+    msg["To"] = CONTACT_FORWARD_TO
+    msg["Reply-To"] = data["email"]
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=CONTACT_FROM_EMAIL.split("@")[-1])
+    msg.set_content(
+        "\n".join(
+            [
+                "New ExchangeHub contact form submission",
+                "",
+                f"Name: {data['name']}",
+                f"Email: {data['email']}",
+                f"IP: {get_client_ip()}",
+                f"Page: {request.url}",
+                "",
+                data["message"],
+            ]
+        )
+    )
+
+    with smtplib.SMTP(CONTACT_SMTP_HOST, CONTACT_SMTP_PORT, timeout=15) as smtp:
+        if CONTACT_SMTP_USE_TLS:
+            smtp.starttls(context=ssl.create_default_context())
+        if CONTACT_SMTP_USER or CONTACT_SMTP_PASSWORD:
+            smtp.login(CONTACT_SMTP_USER, CONTACT_SMTP_PASSWORD)
+        smtp.send_message(msg)
+
 
 BRAND_LOGO_HTML = """
 <span class="brand-lockup" aria-label="ExchangeHub">
@@ -935,10 +1081,10 @@ INFO_PAGES = {
         "sections": [
             {"heading": "Feedback and corrections", "body": [
                 "If you find a broken page, stale data, confusing explanation, or exchange-rate display issue, please contact the site owner so it can be reviewed.",
-                "For production, replace this placeholder with a real support email, contact form, or business address before submitting the site to an ads provider.",
+                f"Send feedback, correction requests, and partnership questions to {CONTACT_EMAIL}.",
             ]},
-            {"heading": "Suggested contact email", "body": [
-                "Use an address such as contact@example.com or support@example.com, and make sure it is visible on this page and monitored regularly.",
+            {"heading": "Response scope", "body": [
+                "ExchangeHub can review site issues, data display problems, and general content questions. The site does not provide personal financial, banking, tax, legal, or investment advice.",
             ]},
         ],
     },
@@ -960,7 +1106,7 @@ INFO_PAGES = {
                 "ExchangeHub does not ask users to create accounts for basic currency conversion pages. Do not enter private banking, card, wallet, or personal financial information into any public exchange-rate tool.",
             ]},
             {"heading": "Contact", "body": [
-                "For privacy requests, replace this placeholder with a real contact email before production launch.",
+                f"For privacy requests, contact {CONTACT_EMAIL}.",
             ]},
         ],
     },
@@ -1009,6 +1155,7 @@ INFO_PAGE_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ page.title }}</title>
     <meta name="description" content="{{ page.description }}" />
+    <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
     <script type="application/ld+json">{{ schema_json|safe }}</script>
     <style>
@@ -1020,6 +1167,31 @@ INFO_PAGE_TEMPLATE = """
       h2 { margin:28px 0 10px; font-size:22px; }
       p { line-height:1.65; color:#475467; }
       .lede { font-size:18px; color:#667085; }
+      .contact-form { margin-top:28px; max-width:720px; border:1px solid #d8dee6; border-radius:8px; padding:20px; background:#f8fafc; }
+      .contact-form h2 { margin-top:0; }
+      .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+      .form-field { display:flex; flex-direction:column; gap:6px; }
+      .form-field.full { grid-column:1 / -1; }
+      .form-field label { font-weight:700; color:#1f2933; font-size:14px; }
+      .form-field input, .form-field textarea { box-sizing:border-box; width:100%; border:1px solid #cfd8e3; border-radius:6px; padding:10px 11px; font:inherit; color:#1f2933; background:#fff; }
+      .form-field textarea { min-height:150px; resize:vertical; }
+      .form-field input:focus, .form-field textarea:focus { outline:2px solid rgba(56,189,248,.28); border-color:#38bdf8; }
+      .form-actions { margin-top:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+      .contact-submit { border:1px solid #111827; border-radius:6px; background:#111827; color:#fff; font-weight:700; padding:10px 14px; cursor:pointer; }
+      .contact-submit:hover { background:#000; }
+      .form-note { color:#667085; font-size:13px; margin:0; }
+      .form-status { border-radius:6px; padding:10px 12px; margin:0 0 14px; line-height:1.45; }
+      .form-status.success { background:#ecfdf3; border:1px solid #abefc6; color:#067647; }
+      .form-status.error { background:#fff1f3; border:1px solid #fecdd6; color:#b42318; }
+      .bot-field { position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden; }
+      .rotation-captcha { grid-column:1 / -1; border:1px solid #d8dee6; border-radius:8px; background:#fff; padding:14px; display:grid; grid-template-columns:136px minmax(0,1fr); gap:16px; align-items:center; }
+      .rotation-stage { position:relative; width:136px; height:136px; border-radius:50%; background:#f8fafc; display:grid; place-items:center; border:1px solid #d8dee6; overflow:hidden; box-shadow:inset 0 0 0 6px #eef4f8; }
+      .rotation-reference { position:absolute; inset:0; width:100%; height:100%; }
+      .rotation-piece { position:relative; z-index:1; width:78px; height:78px; border-radius:50%; transition:transform .08s linear; transform-origin:50% 50%; filter:drop-shadow(0 5px 10px rgba(15,23,42,.18)); }
+      .rotation-controls { display:flex; flex-direction:column; gap:8px; min-width:0; }
+      .rotation-controls label { font-weight:700; color:#1f2933; font-size:14px; }
+      .rotation-controls input[type="range"] { width:100%; accent-color:#111827; }
+      .rotation-hint { color:#667085; font-size:13px; margin:0; }
       .site-header { border-bottom:1px solid #e5e7eb; background:#fff; position:sticky; top:0; z-index:10; }
       .site-nav { width:var(--shell-width); box-sizing:border-box; margin:0 auto; padding:12px var(--page-gutter); display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
       .brand { font-weight:800; color:#1f2933; text-decoration:none; }
@@ -1086,7 +1258,7 @@ INFO_PAGE_TEMPLATE = """
         .header-pair-group.is-open .header-pair-submenu { display:flex; flex-direction:column; gap:6px; }
         .mega.is-open .mega-panel { display:grid; }
       }
-      @media (max-width:760px){ h1{font-size:28px}.header-pairs{display:none}.mega-panel,.footer-grid{grid-template-columns:1fr;right:0;max-height:70vh;overflow:auto} }
+      @media (max-width:760px){ h1{font-size:28px}.form-grid,.rotation-captcha{grid-template-columns:1fr}.header-pairs{display:none}.mega-panel,.footer-grid{grid-template-columns:1fr;right:0;max-height:70vh;overflow:auto} }
     </style>
   </head>
   <body>
@@ -1151,6 +1323,7 @@ INFO_PAGE_TEMPLATE = """
             {% endfor %}
           </section>
         {% endfor %}
+        {{ extra_html|default("", true)|safe }}
       </div>
     </main>
     {{ footer_html|safe }}
@@ -1248,7 +1421,114 @@ INFO_PAGE_TEMPLATE = """
 """
 
 
-def render_info_page(slug):
+CONTACT_FORM_TEMPLATE = """
+<form class="contact-form" method="post" action="/contact/" novalidate>
+  <h2>Send a message</h2>
+  {% if success %}
+    <p class="form-status success">Thanks. Your message has been sent.</p>
+  {% endif %}
+  {% if errors %}
+    <div class="form-status error">
+      {% for error in errors %}
+        <div>{{ error }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  <input type="hidden" name="form_token" value="{{ form_token }}" />
+  <div class="bot-field" aria-hidden="true">
+    <label for="website">Website</label>
+    <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+  </div>
+  <div class="form-grid">
+    <div class="form-field">
+      <label for="contact-name">Name</label>
+      <input id="contact-name" name="name" type="text" autocomplete="name" maxlength="80" value="{{ values.name }}" required />
+    </div>
+    <div class="form-field">
+      <label for="contact-email">Email</label>
+      <input id="contact-email" name="email" type="email" autocomplete="email" maxlength="120" value="{{ values.email }}" required />
+    </div>
+    <div class="form-field full">
+      <label for="contact-subject">Subject</label>
+      <input id="contact-subject" name="subject" type="text" maxlength="140" value="{{ values.subject }}" required />
+    </div>
+    <div class="form-field full">
+      <label for="contact-message">Message</label>
+      <textarea id="contact-message" name="message" maxlength="4000" required>{{ values.message }}</textarea>
+    </div>
+    <div class="rotation-captcha" data-rotation-start="{{ rotation_start }}">
+      <div class="rotation-stage" aria-hidden="true">
+        <svg class="rotation-reference" viewBox="0 0 140 140" role="img" focusable="false">
+          <defs>
+            <linearGradient id="captcha-sky" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0" stop-color="#38bdf8"/>
+              <stop offset="1" stop-color="#22c55e"/>
+            </linearGradient>
+          </defs>
+          <circle cx="70" cy="70" r="64" fill="#111827"/>
+          <circle cx="70" cy="70" r="43" fill="#f8fafc"/>
+          <path d="M70 10a60 60 0 0 1 52 30" fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round"/>
+          <path d="M130 70a60 60 0 0 1-30 52" fill="none" stroke="#38bdf8" stroke-width="10" stroke-linecap="round"/>
+          <path d="M70 130a60 60 0 0 1-52-30" fill="none" stroke="#22c55e" stroke-width="10" stroke-linecap="round"/>
+          <path d="M10 70a60 60 0 0 1 30-52" fill="none" stroke="#facc15" stroke-width="10" stroke-linecap="round"/>
+          <path d="M70 21v28M119 70H91M70 119V91M21 70h28" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="70" cy="70" r="44" fill="none" stroke="#d8dee6" stroke-width="2"/>
+        </svg>
+        <svg class="rotation-piece" viewBox="0 0 100 100" role="img" focusable="false">
+          <circle cx="50" cy="50" r="49" fill="#111827"/>
+          <path d="M50 2a48 48 0 0 1 42 24" fill="none" stroke="#f59e0b" stroke-width="12" stroke-linecap="round"/>
+          <path d="M98 50a48 48 0 0 1-24 42" fill="none" stroke="#38bdf8" stroke-width="12" stroke-linecap="round"/>
+          <path d="M50 98A48 48 0 0 1 8 74" fill="none" stroke="#22c55e" stroke-width="12" stroke-linecap="round"/>
+          <path d="M2 50A48 48 0 0 1 26 8" fill="none" stroke="#facc15" stroke-width="12" stroke-linecap="round"/>
+          <path d="M50 0v28M100 50H72M50 100V72M0 50h28" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+          <circle cx="50" cy="50" r="20" fill="url(#captcha-sky)"/>
+          <circle cx="50" cy="50" r="8" fill="#fff"/>
+        </svg>
+      </div>
+      <div class="rotation-controls">
+        <label for="rotation-response">Rotate image 1 to match image 2</label>
+        <input id="rotation-response" class="rotation-slider" type="range" min="0" max="359" step="1" value="0" />
+        <input class="rotation-response" name="rotation_response" type="hidden" value="0" />
+        <p class="rotation-hint">Slide until the inner piece lines up with the outer picture.</p>
+      </div>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="contact-submit" type="submit">Send message</button>
+    <p class="form-note">Protected by server-side spam checks.</p>
+  </div>
+  <script>
+    document.querySelectorAll('.rotation-captcha').forEach(captcha => {
+      const start = Number(captcha.dataset.rotationStart || 0);
+      const piece = captcha.querySelector('.rotation-piece');
+      const slider = captcha.querySelector('.rotation-slider');
+      const response = captcha.querySelector('.rotation-response');
+      function updateRotation() {
+        const value = Number(slider.value || 0);
+        piece.style.transform = `rotate(${start + value}deg)`;
+        response.value = String(value);
+      }
+      slider.addEventListener('input', updateRotation);
+      updateRotation();
+    });
+  </script>
+</form>
+"""
+
+
+def render_contact_form(values=None, errors=None, success=False):
+    rotation_start, form_token = prepare_contact_form()
+    return render_template_string(
+        CONTACT_FORM_TEMPLATE,
+        values=values or {"name": "", "email": "", "subject": "", "message": ""},
+        errors=errors or [],
+        success=success,
+        rotation_start=rotation_start,
+        form_token=form_token,
+    )
+
+
+def render_info_page(slug, extra_html=""):
     page = INFO_PAGES.get(slug)
     if not page:
         return "Not found", 404
@@ -1262,6 +1542,8 @@ def render_info_page(slug):
         brand_html=BRAND_LOGO_HTML,
         canonical_url=absolute_url(path),
         schema_json=build_page_schema(page["title"], page["description"], path, menu, page["heading"]),
+        extra_html=extra_html,
+        robots_directives=ROBOTS_INDEX_DIRECTIVES,
     )
 
 
@@ -1284,6 +1566,7 @@ def render_home_page():
         brand_html=BRAND_LOGO_HTML,
         canonical_url=absolute_url("/"),
         schema_json=build_page_schema("Exchange Rates Dashboard", description, "/", menu, "Exchange Rates Dashboard"),
+        robots_directives=ROBOTS_INDEX_DIRECTIVES,
     )
     _HOME_PAGE_CACHE[cache_key] = {"ts": time.time(), "html": html}
     return html
@@ -1299,9 +1582,27 @@ def about_page():
     return render_info_page("about")
 
 
-@app.route("/contact/")
+@app.route("/contact/", methods=["GET", "POST"])
 def contact_page():
-    return render_info_page("contact")
+    values = {"name": "", "email": "", "subject": "", "message": ""}
+    errors = []
+    success = False
+
+    if request.method == "POST":
+        errors, values = validate_contact_submission(request.form)
+        ip = get_client_ip()
+        if not errors and contact_rate_limited(ip):
+            errors.append("Please wait before sending another message.")
+        if not errors:
+            try:
+                send_contact_email(values)
+                mark_contact_submitted(ip)
+                values = {"name": "", "email": "", "subject": "", "message": ""}
+                success = True
+            except Exception:
+                errors.append("Mail delivery is not configured yet. Please try again later.")
+
+    return render_info_page("contact", extra_html=render_contact_form(values, errors, success))
 
 
 @app.route("/privacy-policy/")
@@ -1329,9 +1630,39 @@ def absolute_url(path):
     return site_base_url() + (path if str(path).startswith("/") else f"/{path}")
 
 
+def redirect_permanent(path):
+    return redirect(path, code=301)
+
+
+@app.route("/about")
+def about_page_legacy_redirect():
+    return redirect_permanent("/about/")
+
+
+@app.route("/contact", methods=["GET"])
+def contact_page_legacy_redirect():
+    return redirect_permanent("/contact/")
+
+
+@app.route("/privacy-policy")
+def privacy_policy_page_legacy_redirect():
+    return redirect_permanent("/privacy-policy/")
+
+
+@app.route("/terms")
+def terms_page_legacy_redirect():
+    return redirect_permanent("/terms/")
+
+
+@app.route("/disclaimer")
+def disclaimer_page_legacy_redirect():
+    return redirect_permanent("/disclaimer/")
+
+
 @app.route("/robots.txt")
 def robots_txt():
-    body = f"User-agent: *\nAllow: /\nSitemap: {site_base_url()}/sitemap.xml\n"
+    disallow_rules = "\n".join(f"Disallow: {path}" for path in ROBOTS_DISALLOW_PATHS)
+    body = f"User-agent: *\nAllow: /\n{disallow_rules}\nSitemap: {site_base_url()}/sitemap.xml\n"
     return Response(body, mimetype="text/plain")
 
 
@@ -1377,7 +1708,7 @@ def chart_tool():
 
 @app.route("/chart/")
 def chart_tool_slash():
-    return send_from_directory(app.static_folder, "index.html")
+    return redirect_permanent("/chart")
 
 
 @app.route("/api/home")
@@ -1530,6 +1861,7 @@ HOME_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Exchange Rates Dashboard</title>
     <meta name="description" content="Compare popular currencies against USD, EUR, JPY, GBP, CNY, and VND with live conversion tables and normalized exchange-rate charts." />
+    <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
     <script type="application/ld+json">{{ schema_json|safe }}</script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -3041,7 +3373,7 @@ def exchange_pair_redirect(pair):
         return "Invalid pair", 404
     if len(base) != 3 or len(target) != 3:
         return "Invalid pair", 404
-    return redirect(pair_url(base, target), code=301)
+    return redirect_permanent(pair_url(base, target))
 
 
 @app.route("/<pair>/")
@@ -3052,7 +3384,7 @@ def exchange_pair_trailing_slash_redirect(pair):
         return "Invalid pair", 404
     if len(base) != 3 or len(target) != 3:
         return "Invalid pair", 404
-    return redirect(pair_url(base, target), code=301)
+    return redirect_permanent(pair_url(base, target))
 
 
 @app.route("/<pair>")
@@ -3063,6 +3395,9 @@ def exchange_pair_page(pair):
         return "Invalid pair", 404
     if len(base) != 3 or len(target) != 3:
         return "Invalid pair", 404
+    canonical_path = pair_url(base, target)
+    if request.path != canonical_path:
+        return redirect_permanent(canonical_path)
     return render_cached_pair_page(base, target)
 
 
