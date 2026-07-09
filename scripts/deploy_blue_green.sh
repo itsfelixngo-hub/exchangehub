@@ -14,6 +14,8 @@ GUNICORN_WORKERS="${GUNICORN_WORKERS:-}"
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
+MAIL_HEALTH_RETRIES="${MAIL_HEALTH_RETRIES:-12}"
+MAIL_HEALTH_SLEEP="${MAIL_HEALTH_SLEEP:-5}"
 STATE_DIR="${STATE_DIR:-${APP_DIR}/.deploy-state}"
 MAILSERVER_IMAGE="${MAILSERVER_IMAGE:-ghcr.io/docker-mailserver/docker-mailserver:latest}"
 MAILSERVER_CONTAINER="${MAILSERVER_CONTAINER:-${APP_NAME}-mailserver}"
@@ -62,6 +64,7 @@ MAIL_ENABLE_FAIL2BAN="$(env_value MAIL_ENABLE_FAIL2BAN 1)"
 MAIL_ENABLE_POSTGREY="$(env_value MAIL_ENABLE_POSTGREY 0)"
 MAIL_SSL_TYPE="$(env_value MAIL_SSL_TYPE letsencrypt)"
 MAIL_POSTMASTER_ADDRESS="$(env_value MAIL_POSTMASTER_ADDRESS postmaster@ratehubfx.com)"
+MAIL_PERMIT_DOCKER="$(env_value MAIL_PERMIT_DOCKER none)"
 CONTACT_SMTP_USER_VALUE="$(env_value CONTACT_SMTP_USER "")"
 CONTACT_SMTP_PASSWORD_VALUE="$(env_value CONTACT_SMTP_PASSWORD "")"
 CONTACT_SMTP_HOST_VALUE="$(env_value CONTACT_SMTP_HOST "$MAILSERVER_CONTAINER")"
@@ -127,6 +130,7 @@ docker run -d \
   -e ENABLE_POSTGREY="$MAIL_ENABLE_POSTGREY" \
   -e SSL_TYPE="$MAIL_SSL_TYPE" \
   -e POSTMASTER_ADDRESS="$MAIL_POSTMASTER_ADDRESS" \
+  -e PERMIT_DOCKER="$MAIL_PERMIT_DOCKER" \
   -e ONE_DIR=1 \
   -e DMS_DEBUG=0 \
   -p "${MAIL_PORT_SMTP}:25" \
@@ -142,6 +146,19 @@ docker run -d \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
   --cap-add NET_ADMIN \
   "$MAILSERVER_IMAGE"
+
+for attempt in $(seq 1 "$MAIL_HEALTH_RETRIES"); do
+  mail_status="$(docker inspect -f '{{.State.Status}} {{.State.Restarting}}' "$MAILSERVER_CONTAINER" 2>/dev/null || true)"
+  if [[ "$mail_status" == "running false" ]]; then
+    break
+  fi
+  if [[ "$attempt" == "$MAIL_HEALTH_RETRIES" ]]; then
+    echo "Mailserver failed to stay running. Container state: ${mail_status:-unknown}" >&2
+    docker logs --tail=160 "$MAILSERVER_CONTAINER" >&2 || true
+    exit 1
+  fi
+  sleep "$MAIL_HEALTH_SLEEP"
+done
 
 docker build -t "$image" .
 docker rm -f "$new_container" >/dev/null 2>&1 || true
