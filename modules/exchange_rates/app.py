@@ -44,6 +44,7 @@ CONTACT_SMTP_PORT = int(os.environ.get("CONTACT_SMTP_PORT", "587"))
 CONTACT_SMTP_USER = os.environ.get("CONTACT_SMTP_USER", "")
 CONTACT_SMTP_PASSWORD = os.environ.get("CONTACT_SMTP_PASSWORD", "")
 CONTACT_SMTP_USE_TLS = os.environ.get("CONTACT_SMTP_USE_TLS", "true").lower() not in {"0", "false", "no"}
+CONTACT_SMTP_TLS_VERIFY = os.environ.get("CONTACT_SMTP_TLS_VERIFY", "true").lower() not in {"0", "false", "no"}
 CONTACT_RATE_LIMIT_SECONDS = int(os.environ.get("CONTACT_RATE_LIMIT_SECONDS", "60"))
 CONTACT_MIN_SUBMIT_SECONDS = int(os.environ.get("CONTACT_MIN_SUBMIT_SECONDS", "3"))
 CONTACT_ROTATION_TOLERANCE = int(os.environ.get("CONTACT_ROTATION_TOLERANCE", "8"))
@@ -167,7 +168,8 @@ def send_contact_email(data):
 
     with smtplib.SMTP(CONTACT_SMTP_HOST, CONTACT_SMTP_PORT, timeout=15) as smtp:
         if CONTACT_SMTP_USE_TLS:
-            smtp.starttls(context=ssl.create_default_context())
+            tls_context = ssl.create_default_context() if CONTACT_SMTP_TLS_VERIFY else ssl._create_unverified_context()
+            smtp.starttls(context=tls_context)
         if CONTACT_SMTP_USER or CONTACT_SMTP_PASSWORD:
             smtp.login(CONTACT_SMTP_USER, CONTACT_SMTP_PASSWORD)
         smtp.send_message(msg)
