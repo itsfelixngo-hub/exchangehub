@@ -99,6 +99,18 @@ mkdir -p \
   "$MAIL_DATA_ROOT/mail-logs" \
   "$MAIL_DATA_ROOT/config"
 
+if [[ "$MAIL_SSL_TYPE" == "self-signed" ]]; then
+  mkdir -p "$MAIL_DATA_ROOT/config/ssl/demoCA"
+  if [[ ! -f "$MAIL_DATA_ROOT/config/ssl/${MAIL_FQDN}-key.pem" || ! -f "$MAIL_DATA_ROOT/config/ssl/${MAIL_FQDN}-cert.pem" ]]; then
+    openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+      -keyout "$MAIL_DATA_ROOT/config/ssl/${MAIL_FQDN}-key.pem" \
+      -out "$MAIL_DATA_ROOT/config/ssl/${MAIL_FQDN}-cert.pem" \
+      -subj "/CN=${MAIL_FQDN}" \
+      -addext "subjectAltName=DNS:${MAIL_FQDN},DNS:${MAIL_DOMAIN}" >/dev/null 2>&1
+  fi
+  cp "$MAIL_DATA_ROOT/config/ssl/${MAIL_FQDN}-cert.pem" "$MAIL_DATA_ROOT/config/ssl/demoCA/cacert.pem"
+fi
+
 docker pull "$MAILSERVER_IMAGE" >/dev/null
 if [[ -n "$CONTACT_SMTP_USER_VALUE" && -n "$CONTACT_SMTP_PASSWORD_VALUE" ]]; then
   docker run --rm \

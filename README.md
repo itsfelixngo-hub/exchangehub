@@ -244,7 +244,7 @@ Built-in mailserver setup:
 - Add DMARC TXT, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"`.
 - Open inbound ports `25`, `465`, `587`, `143`, and `993` on the VPS firewall and cloud firewall. Port `25` must not be blocked by the provider.
 - Make sure reverse DNS/PTR for the VPS IP points to `mail.ratehubfx.com`; this is important for mail reputation.
-- `MAIL_SSL_TYPE=self-signed` lets the mailserver boot without a pre-existing certificate. After a valid certificate exists at `/etc/letsencrypt/live/mail.ratehubfx.com`, change it to `MAIL_SSL_TYPE=letsencrypt`.
+- `MAIL_SSL_TYPE=self-signed` lets the mailserver boot without a pre-existing certificate. The deploy script creates the self-signed cert files under `docker-data/dms/config/ssl/`. After a valid certificate exists at `/etc/letsencrypt/live/mail.ratehubfx.com`, change it to `MAIL_SSL_TYPE=letsencrypt`.
 - To import the Cloudflare DNS records automatically, set `CF_API_TOKEN` and `MAIL_SERVER_IP` in `.env`, then run:
 
 ```bash
@@ -277,7 +277,7 @@ One-time VPS bootstrap:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y docker.io nginx git curl
+sudo apt-get install -y docker.io nginx git curl openssl
 sudo usermod -aG docker deploy
 sudo mkdir -p /home/deploy
 sudo chown deploy:deploy /home/deploy
