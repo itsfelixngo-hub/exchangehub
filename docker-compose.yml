@@ -23,7 +23,7 @@ services:
       - ENABLE_CLAMAV=${MAIL_ENABLE_CLAMAV:-0}
       - ENABLE_FAIL2BAN=${MAIL_ENABLE_FAIL2BAN:-1}
       - ENABLE_POSTGREY=${MAIL_ENABLE_POSTGREY:-0}
-      - SSL_TYPE=${MAIL_SSL_TYPE:-letsencrypt}
+      - SSL_TYPE=${MAIL_SSL_TYPE:-self-signed}
       - POSTMASTER_ADDRESS=${MAIL_POSTMASTER_ADDRESS:-postmaster@ratehubfx.com}
       - PERMIT_DOCKER=${MAIL_PERMIT_DOCKER:-none}
       - OVERRIDE_HOSTNAME=${MAIL_HOSTNAME:-mail}.${MAIL_DOMAIN:-ratehubfx.com}
