@@ -1,6 +1,37 @@
 version: '3.8'
 
 services:
+  mailserver:
+    container_name: exchangehub-mailserver
+    image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    hostname: ${MAIL_HOSTNAME:-mail}
+    domainname: ${MAIL_DOMAIN:-ratehubfx.com}
+    ports:
+      - "${MAIL_PORT_SMTP:-25}:25"
+      - "${MAIL_PORT_SUBMISSION:-587}:587"
+      - "${MAIL_PORT_SUBMISSIONS:-465}:465"
+      - "${MAIL_PORT_IMAP:-143}:143"
+      - "${MAIL_PORT_IMAPS:-993}:993"
+    volumes:
+      - ./docker-data/dms/mail-data/:/var/mail/
+      - ./docker-data/dms/mail-state/:/var/mail-state/
+      - ./docker-data/dms/mail-logs/:/var/log/mail/
+      - ./docker-data/dms/config/:/tmp/docker-mailserver/
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - ENABLE_SPAMASSASSIN=${MAIL_ENABLE_SPAMASSASSIN:-1}
+      - ENABLE_CLAMAV=${MAIL_ENABLE_CLAMAV:-0}
+      - ENABLE_FAIL2BAN=${MAIL_ENABLE_FAIL2BAN:-1}
+      - ENABLE_POSTGREY=${MAIL_ENABLE_POSTGREY:-0}
+      - SSL_TYPE=${MAIL_SSL_TYPE:-letsencrypt}
+      - POSTMASTER_ADDRESS=${MAIL_POSTMASTER_ADDRESS:-postmaster@ratehubfx.com}
+      - PERMIT_DOCKER=${MAIL_PERMIT_DOCKER:-none}
+      - ONE_DIR=1
+      - DMS_DEBUG=0
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
   web:
     container_name: exchangehub-web
     image: exchangehub-web:latest
@@ -27,6 +58,18 @@ services:
       - R2_MAX_ATTEMPTS=${R2_MAX_ATTEMPTS:-2}
       - R2_READ_CACHE_SECONDS=${R2_READ_CACHE_SECONDS:-60}
       - PAGE_CACHE_SECONDS=${PAGE_CACHE_SECONDS:-60}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
+      - SITE_CONTACT_EMAIL=${SITE_CONTACT_EMAIL:-contact@ratehubfx.com}
+      - CONTACT_FORWARD_TO=${CONTACT_FORWARD_TO:-test.noreply909@gmail.com}
+      - CONTACT_FROM_EMAIL=${CONTACT_FROM_EMAIL:-contact@ratehubfx.com}
+      - CONTACT_SMTP_HOST=${CONTACT_SMTP_HOST:-mailserver}
+      - CONTACT_SMTP_PORT=${CONTACT_SMTP_PORT:-587}
+      - CONTACT_SMTP_USER=${CONTACT_SMTP_USER:-}
+      - CONTACT_SMTP_PASSWORD=${CONTACT_SMTP_PASSWORD:-}
+      - CONTACT_SMTP_USE_TLS=${CONTACT_SMTP_USE_TLS:-true}
+      - CONTACT_RATE_LIMIT_SECONDS=${CONTACT_RATE_LIMIT_SECONDS:-60}
+      - CONTACT_MIN_SUBMIT_SECONDS=${CONTACT_MIN_SUBMIT_SECONDS:-3}
+      - CONTACT_ROTATION_TOLERANCE=${CONTACT_ROTATION_TOLERANCE:-8}
 
   fetcher:
     container_name: exchangehub-fetcher

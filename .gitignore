@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 rates.db
 wp-content/uploads/
+docker-data/

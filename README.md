@@ -223,22 +223,54 @@ FLASK_SECRET_KEY=GENERATE_A_LONG_RANDOM_SECRET
 SITE_CONTACT_EMAIL=contact@ratehubfx.com
 CONTACT_FORWARD_TO=test.noreply909@gmail.com
 CONTACT_FROM_EMAIL=contact@ratehubfx.com
-CONTACT_SMTP_HOST=smtp.your-mail-provider.com
+CONTACT_SMTP_HOST=exchangehub-mailserver
 CONTACT_SMTP_PORT=587
 CONTACT_SMTP_USER=contact@ratehubfx.com
 CONTACT_SMTP_PASSWORD=YOUR_SMTP_PASSWORD
 CONTACT_SMTP_USE_TLS=true
 CONTACT_ROTATION_TOLERANCE=8
+MAIL_HOSTNAME=mail
+MAIL_DOMAIN=ratehubfx.com
+MAIL_SSL_TYPE=letsencrypt
+MAIL_POSTMASTER_ADDRESS=postmaster@ratehubfx.com
 ```
 
-Contact form mail setup:
+Built-in mailserver setup:
 
-- Create a mailbox or SMTP relay for `contact@ratehubfx.com`.
-- Point the domain MX record to the mail provider.
-- Add the provider SPF TXT record for the domain.
-- Add DKIM TXT/CNAME records from the provider.
-- Add a DMARC TXT record, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"`.
-- Keep `CONTACT_FORWARD_TO=test.noreply909@gmail.com` so site submissions are forwarded to that Gmail address.
+- The deploy script runs `ghcr.io/docker-mailserver/docker-mailserver`, a Postfix/Dovecot-based mailserver with DKIM/DMARC and spam filtering support.
+- Point `mail.ratehubfx.com` A record to the VPS IP.
+- Point `ratehubfx.com` MX record to `mail.ratehubfx.com`.
+- Add SPF TXT on `ratehubfx.com`, for example `v=spf1 mx -all`.
+- Add DMARC TXT, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"`.
+- Open inbound ports `25`, `465`, `587`, `143`, and `993` on the VPS firewall and cloud firewall. Port `25` must not be blocked by the provider.
+- Make sure reverse DNS/PTR for the VPS IP points to `mail.ratehubfx.com`; this is important for mail reputation.
+- To import the Cloudflare DNS records automatically, set `CF_API_TOKEN` and `MAIL_SERVER_IP` in `.env`, then run:
+
+```bash
+python3 scripts/import_cloudflare_mail_dns.py --dry-run
+python3 scripts/import_cloudflare_mail_dns.py
+```
+
+To import from a Cloudflare zone export file:
+
+```bash
+python3 scripts/import_cloudflare_mail_dns.py --zone-file deploy/ratehubfx.com.txt --dry-run
+python3 scripts/import_cloudflare_mail_dns.py --zone-file deploy/ratehubfx.com.txt
+```
+
+- After first deploy, print the DKIM DNS record and add it to DNS:
+
+```bash
+docker exec exchangehub-mailserver cat /tmp/docker-mailserver/opendkim/keys/ratehubfx.com/mail.txt
+```
+
+Or import DKIM automatically after the file exists:
+
+```bash
+python3 scripts/import_cloudflare_mail_dns.py --dkim-file docker-data/dms/config/opendkim/keys/ratehubfx.com/mail.txt
+```
+
+- The contact form authenticates as `CONTACT_SMTP_USER` and forwards submissions to `CONTACT_FORWARD_TO`.
 
 One-time VPS bootstrap:
 

@@ -1600,6 +1600,7 @@ def contact_page():
                 values = {"name": "", "email": "", "subject": "", "message": ""}
                 success = True
             except Exception:
+                app.logger.exception("Contact form mail delivery failed")
                 errors.append("Mail delivery is not configured yet. Please try again later.")
 
     return render_info_page("contact", extra_html=render_contact_form(values, errors, success))

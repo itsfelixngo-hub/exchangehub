@@ -15,6 +15,9 @@ HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
 STATE_DIR="${STATE_DIR:-${APP_DIR}/.deploy-state}"
+MAILSERVER_IMAGE="${MAILSERVER_IMAGE:-ghcr.io/docker-mailserver/docker-mailserver:latest}"
+MAILSERVER_CONTAINER="${MAILSERVER_CONTAINER:-${APP_NAME}-mailserver}"
+MAIL_DATA_ROOT="${MAIL_DATA_ROOT:-${APP_DIR}/docker-data/dms}"
 
 cd "$APP_DIR"
 
@@ -34,6 +37,36 @@ if [[ -z "$GUNICORN_WORKERS" ]] && grep -q '^GUNICORN_WORKERS=' .env; then
   GUNICORN_WORKERS="$(grep -m1 '^GUNICORN_WORKERS=' .env | cut -d= -f2-)"
 fi
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
+
+env_value() {
+  local key="$1"
+  local default_value="$2"
+  local value=""
+  if [[ -f .env ]]; then
+    value="$(grep -m1 "^${key}=" .env | cut -d= -f2- || true)"
+  fi
+  printf "%s" "${value:-$default_value}"
+}
+
+MAIL_HOSTNAME="$(env_value MAIL_HOSTNAME mail)"
+MAIL_DOMAIN="$(env_value MAIL_DOMAIN ratehubfx.com)"
+MAIL_FQDN="${MAIL_HOSTNAME}.${MAIL_DOMAIN}"
+MAIL_PORT_SMTP="$(env_value MAIL_PORT_SMTP 25)"
+MAIL_PORT_SUBMISSION="$(env_value MAIL_PORT_SUBMISSION 587)"
+MAIL_PORT_SUBMISSIONS="$(env_value MAIL_PORT_SUBMISSIONS 465)"
+MAIL_PORT_IMAP="$(env_value MAIL_PORT_IMAP 143)"
+MAIL_PORT_IMAPS="$(env_value MAIL_PORT_IMAPS 993)"
+MAIL_ENABLE_SPAMASSASSIN="$(env_value MAIL_ENABLE_SPAMASSASSIN 1)"
+MAIL_ENABLE_CLAMAV="$(env_value MAIL_ENABLE_CLAMAV 0)"
+MAIL_ENABLE_FAIL2BAN="$(env_value MAIL_ENABLE_FAIL2BAN 1)"
+MAIL_ENABLE_POSTGREY="$(env_value MAIL_ENABLE_POSTGREY 0)"
+MAIL_SSL_TYPE="$(env_value MAIL_SSL_TYPE letsencrypt)"
+MAIL_POSTMASTER_ADDRESS="$(env_value MAIL_POSTMASTER_ADDRESS postmaster@ratehubfx.com)"
+CONTACT_SMTP_USER_VALUE="$(env_value CONTACT_SMTP_USER "")"
+CONTACT_SMTP_PASSWORD_VALUE="$(env_value CONTACT_SMTP_PASSWORD "")"
+CONTACT_SMTP_HOST_VALUE="$(env_value CONTACT_SMTP_HOST "$MAILSERVER_CONTAINER")"
+CONTACT_SMTP_PORT_VALUE="$(env_value CONTACT_SMTP_PORT 587)"
+CONTACT_FORWARD_TO_VALUE="$(env_value CONTACT_FORWARD_TO "")"
 
 current_color="none"
 if [[ -f "$ACTIVE_FILE" ]]; then
@@ -56,6 +89,58 @@ old_container="${APP_NAME}-web-${old_color}"
 fetcher_container="${APP_NAME}-fetcher"
 
 docker network create "$NETWORK_NAME" >/dev/null 2>&1 || true
+
+mkdir -p \
+  "$MAIL_DATA_ROOT/mail-data" \
+  "$MAIL_DATA_ROOT/mail-state" \
+  "$MAIL_DATA_ROOT/mail-logs" \
+  "$MAIL_DATA_ROOT/config"
+
+docker pull "$MAILSERVER_IMAGE" >/dev/null
+docker rm -f "$MAILSERVER_CONTAINER" >/dev/null 2>&1 || true
+docker run -d \
+  --name "$MAILSERVER_CONTAINER" \
+  --restart unless-stopped \
+  --network "$NETWORK_NAME" \
+  --hostname "$MAIL_FQDN" \
+  -e ENABLE_SPAMASSASSIN="$MAIL_ENABLE_SPAMASSASSIN" \
+  -e ENABLE_CLAMAV="$MAIL_ENABLE_CLAMAV" \
+  -e ENABLE_FAIL2BAN="$MAIL_ENABLE_FAIL2BAN" \
+  -e ENABLE_POSTGREY="$MAIL_ENABLE_POSTGREY" \
+  -e SSL_TYPE="$MAIL_SSL_TYPE" \
+  -e POSTMASTER_ADDRESS="$MAIL_POSTMASTER_ADDRESS" \
+  -e ONE_DIR=1 \
+  -e DMS_DEBUG=0 \
+  -p "${MAIL_PORT_SMTP}:25" \
+  -p "${MAIL_PORT_SUBMISSION}:587" \
+  -p "${MAIL_PORT_SUBMISSIONS}:465" \
+  -p "${MAIL_PORT_IMAP}:143" \
+  -p "${MAIL_PORT_IMAPS}:993" \
+  -v "$MAIL_DATA_ROOT/mail-data:/var/mail" \
+  -v "$MAIL_DATA_ROOT/mail-state:/var/mail-state" \
+  -v "$MAIL_DATA_ROOT/mail-logs:/var/log/mail" \
+  -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
+  -v /etc/localtime:/etc/localtime:ro \
+  -v /etc/letsencrypt:/etc/letsencrypt:ro \
+  --cap-add NET_ADMIN \
+  "$MAILSERVER_IMAGE"
+
+if [[ -n "$CONTACT_SMTP_USER_VALUE" && -n "$CONTACT_SMTP_PASSWORD_VALUE" ]]; then
+  for attempt in $(seq 1 12); do
+    if docker exec "$MAILSERVER_CONTAINER" setup email add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_SMTP_PASSWORD_VALUE" >/dev/null 2>&1; then
+      break
+    fi
+    if docker exec "$MAILSERVER_CONTAINER" setup email list 2>/dev/null | grep -q "^${CONTACT_SMTP_USER_VALUE}$"; then
+      break
+    fi
+    sleep 5
+  done
+  if [[ -n "$CONTACT_FORWARD_TO_VALUE" ]]; then
+    docker exec "$MAILSERVER_CONTAINER" setup alias add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_FORWARD_TO_VALUE" >/dev/null 2>&1 || true
+  fi
+  docker exec "$MAILSERVER_CONTAINER" setup config dkim >/dev/null 2>&1 || true
+fi
+
 docker build -t "$image" .
 docker rm -f "$new_container" >/dev/null 2>&1 || true
 
@@ -65,6 +150,8 @@ docker run -d \
   --network "$NETWORK_NAME" \
   --env-file .env \
   -e FLASK_ENV=production \
+  -e CONTACT_SMTP_HOST="$CONTACT_SMTP_HOST_VALUE" \
+  -e CONTACT_SMTP_PORT="$CONTACT_SMTP_PORT_VALUE" \
   -p "127.0.0.1:${new_port}:5000" \
   "$image" \
   gunicorn -w "$GUNICORN_WORKERS" -b 0.0.0.0:5000 app:app

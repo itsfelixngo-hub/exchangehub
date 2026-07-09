@@ -5,6 +5,7 @@
 .deploy-state
 .github-state
 .*-state
+docker-data
 .env
 .env.*
 !.env.sample
