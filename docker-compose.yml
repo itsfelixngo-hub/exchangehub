@@ -26,6 +26,7 @@ services:
       - SSL_TYPE=${MAIL_SSL_TYPE:-letsencrypt}
       - POSTMASTER_ADDRESS=${MAIL_POSTMASTER_ADDRESS:-postmaster@ratehubfx.com}
       - PERMIT_DOCKER=${MAIL_PERMIT_DOCKER:-none}
+      - OVERRIDE_HOSTNAME=${MAIL_HOSTNAME:-mail}.${MAIL_DOMAIN:-ratehubfx.com}
       - ONE_DIR=1
       - DMS_DEBUG=0
     cap_add:

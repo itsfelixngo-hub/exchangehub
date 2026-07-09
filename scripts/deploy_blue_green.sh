@@ -97,12 +97,30 @@ mkdir -p \
   "$MAIL_DATA_ROOT/config"
 
 docker pull "$MAILSERVER_IMAGE" >/dev/null
+if [[ -n "$CONTACT_SMTP_USER_VALUE" && -n "$CONTACT_SMTP_PASSWORD_VALUE" ]]; then
+  docker run --rm \
+    -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
+    "$MAILSERVER_IMAGE" \
+    setup email add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_SMTP_PASSWORD_VALUE" >/dev/null 2>&1 || true
+  if [[ -n "$CONTACT_FORWARD_TO_VALUE" ]]; then
+    docker run --rm \
+      -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
+      "$MAILSERVER_IMAGE" \
+      setup alias add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_FORWARD_TO_VALUE" >/dev/null 2>&1 || true
+  fi
+  docker run --rm \
+    -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
+    "$MAILSERVER_IMAGE" \
+    setup config dkim domain "$MAIL_DOMAIN" >/dev/null 2>&1 || true
+fi
+
 docker rm -f "$MAILSERVER_CONTAINER" >/dev/null 2>&1 || true
 docker run -d \
   --name "$MAILSERVER_CONTAINER" \
   --restart unless-stopped \
   --network "$NETWORK_NAME" \
   --hostname "$MAIL_FQDN" \
+  -e OVERRIDE_HOSTNAME="$MAIL_FQDN" \
   -e ENABLE_SPAMASSASSIN="$MAIL_ENABLE_SPAMASSASSIN" \
   -e ENABLE_CLAMAV="$MAIL_ENABLE_CLAMAV" \
   -e ENABLE_FAIL2BAN="$MAIL_ENABLE_FAIL2BAN" \
@@ -124,22 +142,6 @@ docker run -d \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
   --cap-add NET_ADMIN \
   "$MAILSERVER_IMAGE"
-
-if [[ -n "$CONTACT_SMTP_USER_VALUE" && -n "$CONTACT_SMTP_PASSWORD_VALUE" ]]; then
-  for attempt in $(seq 1 12); do
-    if docker exec "$MAILSERVER_CONTAINER" setup email add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_SMTP_PASSWORD_VALUE" >/dev/null 2>&1; then
-      break
-    fi
-    if docker exec "$MAILSERVER_CONTAINER" setup email list 2>/dev/null | grep -q "^${CONTACT_SMTP_USER_VALUE}$"; then
-      break
-    fi
-    sleep 5
-  done
-  if [[ -n "$CONTACT_FORWARD_TO_VALUE" ]]; then
-    docker exec "$MAILSERVER_CONTAINER" setup alias add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_FORWARD_TO_VALUE" >/dev/null 2>&1 || true
-  fi
-  docker exec "$MAILSERVER_CONTAINER" setup config dkim >/dev/null 2>&1 || true
-fi
 
 docker build -t "$image" .
 docker rm -f "$new_container" >/dev/null 2>&1 || true
