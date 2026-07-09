@@ -825,6 +825,14 @@ def normalized_history(base, quote):
     return points
 
 
+def build_home_chart_series(base, quote):
+    base = base.upper()
+    quote = quote.upper()
+    if base == quote or base not in config_currencies() or quote not in config_currencies():
+        return None
+    return {"label": f"{base} to {quote}", "data": normalized_history(base, quote)}
+
+
 def chart_description_for_quote(quote):
     return (
         f"<p>This chart compares major currencies against <strong>{quote}</strong> using a base-100 index. "
@@ -837,21 +845,24 @@ def chart_description_for_quote(quote):
     )
 
 
-def build_home_model(quote="USD"):
+def build_home_model(quote="USD", include_series=True):
     quote = quote.upper()
     if quote not in config_currencies():
         quote = "USD"
     matrix, latest_ts = build_home_matrix()
     latest_table, _ = build_latest_usd_table()
-    series = [
-        {"label": f"{base} to {quote}", "data": normalized_history(base, quote)}
-        for base in HOME_CHART_BASES
-        if base != quote
-    ]
+    series = []
+    if include_series:
+        series = [
+            {"label": f"{base} to {quote}", "data": normalized_history(base, quote)}
+            for base in HOME_CHART_BASES
+            if base != quote
+        ]
     return {
         "columns": MAJOR_COLUMNS,
         "quote": quote,
         "quote_options": MAJOR_COLUMNS,
+        "chart_bases": HOME_CHART_BASES,
         "converter_bases": MAJOR_COLUMNS,
         "converter_targets": CONVERTER_TARGETS,
         "latest_usd_table": latest_table,
@@ -863,13 +874,13 @@ def build_home_model(quote="USD"):
     }
 
 
-def cached_home_model(quote="USD"):
-    key = str(quote or "USD").upper()
+def cached_home_model(quote="USD", include_series=True):
+    key = (str(quote or "USD").upper(), bool(include_series))
     cached = _HOME_MODEL_CACHE.get(key)
     if cached and page_cache_fresh(cached["ts"]):
         return cached["model"]
 
-    model = build_home_model(key)
+    model = build_home_model(key[0], include_series=include_series)
     _HOME_MODEL_CACHE[key] = {"ts": time.time(), "model": model}
     return model
 
@@ -1555,7 +1566,7 @@ def render_home_page():
     if cached and page_cache_fresh(cached["ts"]):
         return cached["html"]
 
-    model = cached_home_model()
+    model = cached_home_model(include_series=False)
     menu = build_menu_model()
     description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY, and VND with live conversion tables and normalized exchange-rate charts."
     html = render_template_string(
@@ -1564,7 +1575,6 @@ def render_home_page():
         menu=menu,
         footer_html=render_footer_html(menu),
         format_rate=format_rate,
-        series_json=json.dumps(model["series"]),
         brand_html=BRAND_LOGO_HTML,
         canonical_url=absolute_url("/"),
         schema_json=build_page_schema("Exchange Rates Dashboard", description, "/", menu, "Exchange Rates Dashboard"),
@@ -1717,6 +1727,25 @@ def chart_tool_slash():
 @app.route("/api/home")
 def api_home():
     return jsonify(cached_home_model(request.args.get("quote", "USD")))
+
+
+@app.route("/api/home-chart")
+def api_home_chart():
+    quote = request.args.get("quote", "USD").upper()
+    base = request.args.get("base", "").upper()
+    if quote not in config_currencies():
+        quote = "USD"
+    if base not in HOME_CHART_BASES or base == quote:
+        return jsonify({"error": "Unsupported chart pair"}), 404
+    series = build_home_chart_series(base, quote)
+    if series is None:
+        return jsonify({"error": "Unsupported chart pair"}), 404
+    return jsonify({
+        "quote": quote,
+        "base": base,
+        "series": series,
+        "chart_description": chart_description_for_quote(quote),
+    })
 
 
 @app.route("/api/currencies")
@@ -1881,9 +1910,11 @@ HOME_TEMPLATE = """
       .actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
       .actions a { display:inline-flex; align-items:center; justify-content:center; min-height:34px; box-sizing:border-box; padding:7px 11px; border:1px solid #d0d7de; border-radius:8px; color:#1f2933; text-decoration:none; background:#fff; font-size:14px; line-height:1; white-space:nowrap; transition:background-color .16s ease-in-out, border-color .16s ease-in-out, transform .16s ease-in-out; }
       .actions a:hover { background:#f8fafc; border-color:#bcc9d6; transform:translateY(-1px); }
-      .chart-wrap { border: 1px solid #e5e7eb; padding: clamp(10px, 1vw, 16px); border-radius: 8px; }
+      .chart-wrap { position:relative; border: 1px solid #e5e7eb; padding: clamp(10px, 1vw, 16px); border-radius: 8px; }
       .chart-wrap canvas { width:100% !important; height:100% !important; }
       #home-chart { min-height:360px; }
+      .chart-status { position:absolute; inset:clamp(10px, 1vw, 16px); display:flex; align-items:center; justify-content:center; color:#667085; font-size:14px; text-align:center; background:rgba(255,255,255,.86); }
+      .chart-wrap.is-ready .chart-status { display:none; }
       .chart-desc { margin:12px 0 0; border:1px solid #e5e7eb; border-radius:8px; background:#f8fafc; color:#475467; font-size:14px; line-height:1.55; padding:14px; }
       .chart-desc p { margin:0 0 10px; }
       .chart-desc p:last-child { margin-bottom:0; }
@@ -2330,6 +2361,7 @@ HOME_TEMPLATE = """
         </div>
         <div class="chart-wrap">
           <canvas id="home-chart" height="360"></canvas>
+          <div id="home-chart-status" class="chart-status">Loading chart...</div>
         </div>
         <div id="home-chart-desc" class="chart-desc">{{ model.chart_description|safe }}</div>
       </section>
@@ -2469,9 +2501,9 @@ HOME_TEMPLATE = """
     </main>
     {{ footer_html|safe }}
     <script>
-      let series = {{ series_json|safe }};
       const latestUsdTable = {{ model.latest_usd_table|tojson }};
       const converterTargets = {{ model.converter_targets|tojson }};
+      const chartBases = {{ model.chart_bases|tojson }};
       const palette = ['#0b7cff', '#16a34a', '#e8590c', '#7c6bb0', '#0891b2', '#dc2626'];
       const lineStyles = [
         { borderDash: [], borderCapStyle: 'butt' },
@@ -2629,43 +2661,75 @@ HOME_TEMPLATE = """
         });
         return { labels, datasets };
       }
-      const initialData = buildHomeChartData(series);
-      const homeChart = new Chart(document.getElementById('home-chart').getContext('2d'), {
-        type: 'line',
-        data: initialData,
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          elements: { line: { borderJoinStyle: 'round' } },
-          plugins: {
-            legend: {
-              position: 'top',
-              align: 'start',
-              labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, boxHeight: 6, color: '#475467', padding: 14 }
-            },
-            tooltip: {
-              callbacks: {
-                label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(2)}`
-              }
-            }
+      const chartWrap = document.querySelector('.chart-wrap');
+      const chartStatus = document.getElementById('home-chart-status');
+      let homeChart = null;
+      const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        elements: { line: { borderJoinStyle: 'round' } },
+        plugins: {
+          legend: {
+            position: 'top',
+            align: 'start',
+            labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 28, boxHeight: 6, color: '#475467', padding: 14 }
           },
-          scales: {
-            x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
-            y: { position: 'right', grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 5, padding: 8, color: '#667085', callback: value => Number(value).toFixed(0) } }
+          tooltip: {
+            callbacks: {
+              label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(2)}`
+            }
           }
+        },
+        scales: {
+          x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
+          y: { position: 'right', grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 5, padding: 8, color: '#667085', callback: value => Number(value).toFixed(0) } }
         }
-      });
-      document.getElementById('home-quote').addEventListener('change', async (event) => {
-        const quote = event.target.value;
-        const res = await fetch(`/api/home?quote=${encodeURIComponent(quote)}`);
-        const data = await res.json();
-        document.getElementById('home-quote-label').textContent = data.quote;
-        document.getElementById('home-chart-desc').innerHTML = data.chart_description;
-        const nextData = buildHomeChartData(data.series || []);
-        homeChart.data.labels = nextData.labels;
-        homeChart.data.datasets = nextData.datasets;
-        homeChart.update();
+      };
+      function setChartStatus(message){
+        if(chartStatus) chartStatus.textContent = message;
+      }
+      let chartLoadToken = 0;
+      async function loadHomeChart(quote){
+        const token = ++chartLoadToken;
+        const nextSeries = [];
+        chartWrap.classList.remove('is-ready');
+        setChartStatus('Loading chart...');
+        if(typeof Chart === 'undefined') {
+          setChartStatus('Chart is loading. Please refresh in a moment.');
+          return;
+        }
+        try {
+          document.getElementById('home-quote-label').textContent = quote;
+          for(const base of chartBases.filter(item => item !== quote)) {
+            const res = await fetch(`/api/home-chart?quote=${encodeURIComponent(quote)}&base=${encodeURIComponent(base)}`, { cache: 'no-store' });
+            if(token !== chartLoadToken) return;
+            if(!res.ok) continue;
+            const data = await res.json();
+            nextSeries.push(data.series);
+            document.getElementById('home-chart-desc').innerHTML = data.chart_description;
+            const nextData = buildHomeChartData(nextSeries);
+            if(!homeChart) {
+              homeChart = new Chart(document.getElementById('home-chart').getContext('2d'), {
+                type: 'line',
+                data: nextData,
+                options: chartOptions
+              });
+            } else {
+              homeChart.data.labels = nextData.labels;
+              homeChart.data.datasets = nextData.datasets;
+              homeChart.update();
+            }
+            chartWrap.classList.add('is-ready');
+          }
+          if(!nextSeries.length) throw new Error('No chart series loaded');
+        } catch (error) {
+          console.error('Failed to load home chart', error);
+          setChartStatus('Chart data unavailable. The table below is still available.');
+        }
+      }
+      document.getElementById('home-quote').addEventListener('change', (event) => {
+        loadHomeChart(event.target.value);
       });
       document.getElementById('converter-amount').addEventListener('input', renderAllConverter);
       document.getElementById('converter-base').addEventListener('change', renderAllConverter);
@@ -2685,6 +2749,7 @@ HOME_TEMPLATE = """
         setConverterVisible(false);
       }
       initEnhancedConverterSelects();
+      loadHomeChart(document.getElementById('home-quote').value);
       renderAllConverter();
       renderConverter('quick-converter');
     </script>
