@@ -234,6 +234,13 @@ MAIL_HOSTNAME=mail
 MAIL_DOMAIN=ratehubfx.com
 MAIL_SSL_TYPE=self-signed
 MAIL_POSTMASTER_ADDRESS=postmaster@ratehubfx.com
+MAIL_POSTFIX_INET_PROTOCOLS=ipv4
+
+# Optional but recommended when the VPS provider blocks outbound TCP/25.
+# Example values depend on your SMTP relay provider.
+MAIL_DEFAULT_RELAY_HOST=[smtp-relay.example.com]:587
+MAIL_RELAY_USER=YOUR_RELAY_USERNAME
+MAIL_RELAY_PASSWORD=YOUR_RELAY_PASSWORD
 ```
 
 Built-in mailserver setup:
@@ -243,7 +250,8 @@ Built-in mailserver setup:
 - Point `ratehubfx.com` MX record to `mail.ratehubfx.com`.
 - Add SPF TXT on `ratehubfx.com`, for example `v=spf1 mx -all`.
 - Add DMARC TXT, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"`.
-- Open inbound ports `25`, `465`, `587`, `143`, and `993` on the VPS firewall and cloud firewall. Port `25` must not be blocked by the provider.
+- Open inbound ports `25`, `465`, `587`, `143`, and `993` on the VPS firewall and cloud firewall. Inbound `25` is required for receiving mail from other mail servers.
+- Many VPS providers block outbound TCP/25, which causes logs like `connect to gmail-smtp-in.l.google.com[...]25: Connection timed out`. In that case, set an authenticated SMTP relay on port `587` with `MAIL_DEFAULT_RELAY_HOST`, `MAIL_RELAY_USER`, and `MAIL_RELAY_PASSWORD`.
 - Make sure reverse DNS/PTR for the VPS IP points to `mail.ratehubfx.com`; this is important for mail reputation.
 - `MAIL_SSL_TYPE=self-signed` lets the mailserver boot without a pre-existing certificate. The deploy script creates the self-signed cert files under `docker-data/dms/config/ssl/`. Use `CONTACT_SMTP_TLS_VERIFY=false` with this mode. After a valid certificate exists at `/etc/letsencrypt/live/mail.ratehubfx.com`, change it to `MAIL_SSL_TYPE=letsencrypt` and `CONTACT_SMTP_TLS_VERIFY=true`.
 - To import the Cloudflare DNS records automatically, set `CF_API_TOKEN` and `MAIL_SERVER_IP` in `.env`, then run:
