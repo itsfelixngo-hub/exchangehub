@@ -113,10 +113,15 @@ fi
 
 docker pull "$MAILSERVER_IMAGE" >/dev/null
 if [[ -n "$CONTACT_SMTP_USER_VALUE" && -n "$CONTACT_SMTP_PASSWORD_VALUE" ]]; then
-  docker run --rm \
+  if ! docker run --rm \
     -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
     "$MAILSERVER_IMAGE" \
-    setup email add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_SMTP_PASSWORD_VALUE" >/dev/null 2>&1 || true
+    setup email add "$CONTACT_SMTP_USER_VALUE" "$CONTACT_SMTP_PASSWORD_VALUE" >/dev/null 2>&1; then
+    docker run --rm \
+      -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
+      "$MAILSERVER_IMAGE" \
+      setup email update "$CONTACT_SMTP_USER_VALUE" "$CONTACT_SMTP_PASSWORD_VALUE" >/dev/null 2>&1
+  fi
   if [[ -n "$CONTACT_FORWARD_TO_VALUE" ]]; then
     docker run --rm \
       -v "$MAIL_DATA_ROOT/config:/tmp/docker-mailserver" \
