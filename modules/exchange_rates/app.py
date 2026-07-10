@@ -2689,19 +2689,35 @@ HOME_TEMPLATE = """
       function setChartStatus(message){
         if(chartStatus) chartStatus.textContent = message;
       }
+      function chartLoadDelay(index){
+        if(index === 0) return 0;
+        return 5000 + Math.floor(Math.random() * 5001);
+      }
+      function waitForChartDelay(ms, token){
+        return new Promise((resolve) => {
+          window.setTimeout(() => {
+            resolve(token === chartLoadToken);
+          }, ms);
+        });
+      }
       let chartLoadToken = 0;
       async function loadHomeChart(quote){
         const token = ++chartLoadToken;
         const nextSeries = [];
+        const bases = chartBases.filter(item => item !== quote);
         chartWrap.classList.remove('is-ready');
-        setChartStatus('Loading chart...');
+        setChartStatus('Loading chart 1 of ' + bases.length + '...');
         if(typeof Chart === 'undefined') {
           setChartStatus('Chart is loading. Please refresh in a moment.');
           return;
         }
         try {
           document.getElementById('home-quote-label').textContent = quote;
-          for(const base of chartBases.filter(item => item !== quote)) {
+          for(let index = 0; index < bases.length; index += 1) {
+            const base = bases[index];
+            const shouldContinue = await waitForChartDelay(chartLoadDelay(index), token);
+            if(!shouldContinue) return;
+            setChartStatus('Loading chart ' + (index + 1) + ' of ' + bases.length + '...');
             const res = await fetch(`/api/home-chart?quote=${encodeURIComponent(quote)}&base=${encodeURIComponent(base)}`, { cache: 'no-store' });
             if(token !== chartLoadToken) return;
             if(!res.ok) continue;
@@ -2731,6 +2747,15 @@ HOME_TEMPLATE = """
       document.getElementById('home-quote').addEventListener('change', (event) => {
         loadHomeChart(event.target.value);
       });
+      function scheduleHomeChartLoad(){
+        const quote = document.getElementById('home-quote').value;
+        const start = () => loadHomeChart(quote);
+        if('requestIdleCallback' in window) {
+          window.requestIdleCallback(start, { timeout: 3000 });
+        } else {
+          window.setTimeout(start, 1200);
+        }
+      }
       document.getElementById('converter-amount').addEventListener('input', renderAllConverter);
       document.getElementById('converter-base').addEventListener('change', renderAllConverter);
       document.getElementById('quick-converter-amount').addEventListener('input', () => renderConverter('quick-converter'));
@@ -2749,7 +2774,7 @@ HOME_TEMPLATE = """
         setConverterVisible(false);
       }
       initEnhancedConverterSelects();
-      loadHomeChart(document.getElementById('home-quote').value);
+      scheduleHomeChartLoad();
       renderAllConverter();
       renderConverter('quick-converter');
     </script>
