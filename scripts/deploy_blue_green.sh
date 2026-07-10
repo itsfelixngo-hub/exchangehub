@@ -36,7 +36,7 @@ if [[ ! -f .env ]]; then
 fi
 
 if [[ -z "$GUNICORN_WORKERS" ]] && grep -q '^GUNICORN_WORKERS=' .env; then
-  GUNICORN_WORKERS="$(grep -m1 '^GUNICORN_WORKERS=' .env | cut -d= -f2-)"
+  GUNICORN_WORKERS="$(grep '^GUNICORN_WORKERS=' .env | tail -n1 | cut -d= -f2-)"
 fi
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
 
@@ -45,7 +45,7 @@ env_value() {
   local default_value="$2"
   local value=""
   if [[ -f .env ]]; then
-    value="$(grep -m1 "^${key}=" .env | cut -d= -f2- || true)"
+    value="$(grep "^${key}=" .env | tail -n1 | cut -d= -f2- || true)"
   fi
   printf "%s" "${value:-$default_value}"
 }
@@ -76,6 +76,29 @@ CONTACT_SMTP_PASSWORD_VALUE="$(env_value CONTACT_SMTP_PASSWORD "")"
 CONTACT_SMTP_HOST_VALUE="$(env_value CONTACT_SMTP_HOST "$MAILSERVER_CONTAINER")"
 CONTACT_SMTP_PORT_VALUE="$(env_value CONTACT_SMTP_PORT 587)"
 CONTACT_FORWARD_TO_VALUE="$(env_value CONTACT_FORWARD_TO "")"
+
+mail_relay_args=()
+if [[ -n "$MAIL_DEFAULT_RELAY_HOST" ]]; then
+  mail_relay_args+=(-e "DEFAULT_RELAY_HOST=$MAIL_DEFAULT_RELAY_HOST")
+fi
+if [[ -n "$MAIL_RELAY_HOST" ]]; then
+  mail_relay_args+=(-e "RELAY_HOST=$MAIL_RELAY_HOST")
+fi
+if [[ -n "$MAIL_RELAY_PORT" ]]; then
+  mail_relay_args+=(-e "RELAY_PORT=$MAIL_RELAY_PORT")
+fi
+if [[ -n "$MAIL_RELAY_USER" ]]; then
+  mail_relay_args+=(-e "RELAY_USER=$MAIL_RELAY_USER")
+fi
+if [[ -n "$MAIL_RELAY_PASSWORD" ]]; then
+  mail_relay_args+=(-e "RELAY_PASSWORD=$MAIL_RELAY_PASSWORD")
+fi
+
+if [[ -n "$MAIL_DEFAULT_RELAY_HOST" || -n "$MAIL_RELAY_HOST" ]]; then
+  echo "Mail relay enabled: ${MAIL_DEFAULT_RELAY_HOST:-${MAIL_RELAY_HOST}:${MAIL_RELAY_PORT:-25}}"
+else
+  echo "Mail relay disabled: outbound delivery will use recipient MX on TCP/25."
+fi
 
 current_color="none"
 if [[ -f "$ACTIVE_FILE" ]]; then
@@ -154,12 +177,8 @@ docker run -d \
   -e SSL_TYPE="$MAIL_SSL_TYPE" \
   -e POSTMASTER_ADDRESS="$MAIL_POSTMASTER_ADDRESS" \
   -e PERMIT_DOCKER="$MAIL_PERMIT_DOCKER" \
-  -e DEFAULT_RELAY_HOST="$MAIL_DEFAULT_RELAY_HOST" \
-  -e RELAY_HOST="$MAIL_RELAY_HOST" \
-  -e RELAY_PORT="$MAIL_RELAY_PORT" \
-  -e RELAY_USER="$MAIL_RELAY_USER" \
-  -e RELAY_PASSWORD="$MAIL_RELAY_PASSWORD" \
   -e POSTFIX_INET_PROTOCOLS="$MAIL_POSTFIX_INET_PROTOCOLS" \
+  "${mail_relay_args[@]}" \
   -e ONE_DIR=1 \
   -e DMS_DEBUG=0 \
   -p "${MAIL_PORT_SMTP}:25" \
