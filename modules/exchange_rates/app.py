@@ -1896,7 +1896,6 @@ HOME_TEMPLATE = """
     <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
     <script type="application/ld+json">{{ schema_json|safe }}</script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       :root { --page-gutter: clamp(12px, 1.6vw, 26px); --shell-width: 100%; }
       body { font-family: Arial, sans-serif; margin: 0; color: #1f2933; background: #fff; }
@@ -2700,6 +2699,20 @@ HOME_TEMPLATE = """
           }, ms);
         });
       }
+      let chartLibraryPromise = null;
+      function ensureChartLibrary(){
+        if(typeof Chart !== 'undefined') return Promise.resolve();
+        if(chartLibraryPromise) return chartLibraryPromise;
+        chartLibraryPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Chart.js failed to load'));
+          document.head.appendChild(script);
+        });
+        return chartLibraryPromise;
+      }
       let chartLoadToken = 0;
       async function loadHomeChart(quote){
         const token = ++chartLoadToken;
@@ -2707,11 +2720,9 @@ HOME_TEMPLATE = """
         const bases = chartBases.filter(item => item !== quote);
         chartWrap.classList.remove('is-ready');
         setChartStatus('Loading chart 1 of ' + bases.length + '...');
-        if(typeof Chart === 'undefined') {
-          setChartStatus('Chart is loading. Please refresh in a moment.');
-          return;
-        }
         try {
+          await ensureChartLibrary();
+          if(token !== chartLoadToken) return;
           document.getElementById('home-quote-label').textContent = quote;
           for(let index = 0; index < bases.length; index += 1) {
             const base = bases[index];
