@@ -149,7 +149,89 @@ GOOGLE_TAG_HTML = """<!-- Google tag (gtag.js) -->
         }
       });
     }, { passive: true });
+    document.body.addEventListener('submit', function(event) {
+      const form = event.target.closest('form');
+      if (!form) return;
+      window.exchangeTrackEvent('form_submit_attempt', {
+        form_name: form.classList.contains('contact-form') ? 'contact' : (form.getAttribute('name') || form.id || 'form'),
+        page_path: location.pathname
+      });
+    }, true);
   });
+  window.addEventListener('error', function(event) {
+    window.exchangeTrackEvent('js_error', {
+      message: String(event.message || '').slice(0, 140),
+      source: String(event.filename || '').slice(0, 140),
+      line: event.lineno || 0,
+      page_path: location.pathname
+    });
+  });
+  window.addEventListener('unhandledrejection', function(event) {
+    window.exchangeTrackEvent('js_unhandled_rejection', {
+      message: String(event.reason && (event.reason.message || event.reason) || '').slice(0, 140),
+      page_path: location.pathname
+    });
+  });
+  if (window.fetch) {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = function(resource, options) {
+      const startedAt = performance.now();
+      const url = typeof resource === 'string' ? resource : (resource && resource.url) || '';
+      return originalFetch(resource, options).then(function(response) {
+        if (!response.ok && (url.charAt(0) === '/' || url.indexOf(location.origin) === 0)) {
+          window.exchangeTrackEvent('api_request_error', {
+            request_url: url.slice(0, 140),
+            status_code: response.status,
+            duration_ms: Math.round(performance.now() - startedAt),
+            page_path: location.pathname
+          });
+        }
+        return response;
+      }).catch(function(error) {
+        if (url.charAt(0) === '/' || url.indexOf(location.origin) === 0) {
+          window.exchangeTrackEvent('api_request_exception', {
+            request_url: url.slice(0, 140),
+            message: String(error && error.message || '').slice(0, 140),
+            duration_ms: Math.round(performance.now() - startedAt),
+            page_path: location.pathname
+          });
+        }
+        throw error;
+      });
+    };
+  }
+  (function trackWebVitals() {
+    if (!('PerformanceObserver' in window)) return;
+    let clsValue = 0;
+    let lcpValue = 0;
+    let inpValue = 0;
+    try {
+      new PerformanceObserver(function(list) {
+        list.getEntries().forEach(function(entry) {
+          if (!entry.hadRecentInput) clsValue += entry.value || 0;
+        });
+      }).observe({ type: 'layout-shift', buffered: true });
+    } catch (error) {}
+    try {
+      new PerformanceObserver(function(list) {
+        const entries = list.getEntries();
+        const last = entries[entries.length - 1];
+        if (last) lcpValue = last.startTime || 0;
+      }).observe({ type: 'largest-contentful-paint', buffered: true });
+    } catch (error) {}
+    try {
+      new PerformanceObserver(function(list) {
+        list.getEntries().forEach(function(entry) {
+          inpValue = Math.max(inpValue, entry.duration || 0);
+        });
+      }).observe({ type: 'event', buffered: true, durationThreshold: 40 });
+    } catch (error) {}
+    window.addEventListener('pagehide', function() {
+      if (lcpValue) window.exchangeTrackEvent('web_vital_lcp', { value_ms: Math.round(lcpValue), page_path: location.pathname });
+      if (clsValue) window.exchangeTrackEvent('web_vital_cls', { value: Number(clsValue.toFixed(4)), page_path: location.pathname });
+      if (inpValue) window.exchangeTrackEvent('web_vital_inp', { value_ms: Math.round(inpValue), page_path: location.pathname });
+    });
+  })();
 </script>"""
 
 

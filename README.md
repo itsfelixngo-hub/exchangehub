@@ -359,6 +359,14 @@ Atomic writes & caching
 - `fetch_rates.py` writes to temporary files and `os.replace()` to avoid half-written files.
 - For best performance and SEO, serve the static `rates.html` directly (Nginx will do this) and avoid parsing JSON on every page request. You can also pre-render `rates.html` so the HTML is returned to crawlers without JS.
 
+Analytics tracking
+
+- GA4 is installed with measurement ID `G-TN7DJB48VK`.
+- Site-wide engagement events include `site_click`, `pair_link_click`, `outbound_link_click`, `control_change`, `section_view`, and `scroll_depth`.
+- Conversion-style events include `contact_submit_success`, `form_submit_attempt`, `home_chart_series_loaded`, and `chart_tool_loaded`.
+- Reliability and performance events include `api_request_error`, `api_request_exception`, `js_error`, `js_unhandled_rejection`, `web_vital_lcp`, `web_vital_cls`, and `web_vital_inp`.
+- In GA4, mark `contact_submit_success` as a key event. Optionally mark `pair_link_click` and `chart_tool_loaded` if pair navigation and chart usage are important goals.
+
 Next steps
 
 - If you want, I can: (A) adjust `fetch_rates.py` to fetch more pairs, (B) add automatic pruning settings, or (C) create a small WP plugin wrapper around the snippet. Tell me which.
