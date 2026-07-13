@@ -396,4 +396,11 @@ WP plugin (module) usage
 
 - A simple plugin module is included at `wp-plugin-exchange/exchange-plugin.php`. To use it in your WordPress site, copy the `wp-plugin-exchange` folder into `wp-content/plugins/` and activate the plugin.
 - Create posts of type "Exchange Pages" (in admin menu) for per-pair content. Use slugs like `vnd-usd` to match pair names.
-- Place the shortcode `[exchange_rates_tabs]` on your homepage or any page to display the tabbed chart module. The module reads `rates.json` from the uploads folder to render charts.
+- Place the shortcode `[exchange_rates_tabs]` on your homepage or any page to display the tabbed chart module. The module reads `rates/index.json` from the uploads folder to render charts.
+- The store-ready package source lives in `modules/exchange_rates/wp-plugin-exchange`. Build an installable zip with:
+
+```bash
+scripts/package_wp_plugin.sh
+```
+
+- The zip is written to `dist/wp-plugin/ratehubfx-exchange-rates.zip`. Upload that file in WordPress Admin > Plugins > Add New > Upload Plugin for manual testing. For WordPress.org submission, use the plugin `readme.txt` in the package and submit the zip/source after final screenshots and live data validation.

@@ -4,3 +4,4 @@ __pycache__/
 rates.db
 wp-content/uploads/
 docker-data/
+dist/wp-plugin/ratehubfx-exchange-rates/

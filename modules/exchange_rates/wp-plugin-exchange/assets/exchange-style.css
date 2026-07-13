@@ -8,6 +8,9 @@
 .exchange-controls input:focus,.exchange-controls select:focus,.exchange-controls button:focus{border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.18)}
 .exchange-controls button{cursor:pointer;font-weight:700}
 .exchange-status{min-height:20px;color:#666;margin-bottom:8px}
+.ratehubfx-attribution{margin:8px 0 0;color:#667085;font-size:12px;line-height:1.4}
+.ratehubfx-attribution a{color:#475467;text-decoration:underline;text-underline-offset:2px}
+.ratehubfx-attribution a:hover{color:#111827}
 .exchange-tabs .tabs-list{margin-bottom:10px}
 .exchange-tabs .tab-btn{margin:0 6px 6px 0;padding:8px 12px;border:1px solid #d0d7de;border-radius:999px;background:#fff;color:#475467;cursor:pointer;font-weight:700;transition:border-color .16s ease-in-out,background-color .16s ease-in-out,color .16s ease-in-out}
 .exchange-tabs .tab-btn:hover{border-color:#bcc9d6;background:#f8fafc;color:#1f2933}

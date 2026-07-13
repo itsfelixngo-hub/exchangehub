@@ -1,6 +1,7 @@
 (function(){
   function $(s, ctx=document){ return ctx.querySelector(s); }
   function $all(s, ctx=document){ return Array.from(ctx.querySelectorAll(s)); }
+  const chartInstances = new WeakMap();
 
   function groupPairs(data){
     const groups = {};
@@ -136,10 +137,11 @@
   }
 
   function renderChart(canvas, dataset){
-    if(window.exchangeChart) window.exchangeChart.destroy();
+    const previousChart = chartInstances.get(canvas);
+    if(previousChart) previousChart.destroy();
     const values = dataset.map(point => point.y);
     const color = trendColor(values);
-    window.exchangeChart = new Chart(canvas.getContext('2d'), {
+    const chart = new Chart(canvas.getContext('2d'), {
       type: 'line',
       plugins: [pointValueLabels, latestValueBadge],
       data: {
@@ -161,6 +163,8 @@
         }
       }
     });
+    chartInstances.set(canvas, chart);
+    return chart;
   }
 
   function addEntryToUsdTable(table, entry){
@@ -222,11 +226,9 @@
         const base = baseSelect.value;
         const target = targetSelect.value;
         const points = deriveHistory(entries, base, target);
-        renderChart(canvas, points);
-        if(window.exchangeChart) {
-          window.exchangeChart.data.datasets[0].label = `${base} to ${target}`;
-          window.exchangeChart.update();
-        }
+        const chart = renderChart(canvas, points);
+        chart.data.datasets[0].label = `${base} to ${target}`;
+        chart.update();
         status.textContent = points.length ? `${points.length} point(s) loaded.` : `No ${base} to ${target} data found.`;
       }
 
@@ -332,12 +334,13 @@
           if(points.length && points[points.length-1].x > lastTs){
             const canvas = container.querySelector('.exchange-chart');
             // update chart with new data
-            if(window.exchangeChart) {
-              window.exchangeChart.data.labels = points.map(point => timeFormatter.format(new Date(point.x)));
-              window.exchangeChart.data.datasets[0].data = points.map(point => point.y);
-              window.exchangeChart.data.datasets[0].borderColor = trendColor(window.exchangeChart.data.datasets[0].data);
-              window.exchangeChart.data.datasets[0].backgroundColor = chartAreaGradient;
-              window.exchangeChart.update();
+            const chart = chartInstances.get(canvas);
+            if(chart) {
+              chart.data.labels = points.map(point => timeFormatter.format(new Date(point.x)));
+              chart.data.datasets[0].data = points.map(point => point.y);
+              chart.data.datasets[0].borderColor = trendColor(chart.data.datasets[0].data);
+              chart.data.datasets[0].backgroundColor = chartAreaGradient;
+              chart.update();
             } else {
               renderChart(canvas, points);
             }
