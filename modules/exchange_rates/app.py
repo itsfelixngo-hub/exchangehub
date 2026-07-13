@@ -65,6 +65,8 @@ ROBOTS_DISALLOW_PATHS = [
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 ROBOTS_INDEX_DIRECTIVES = "index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"
+FAVICON_HTML = """<link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+<link rel="shortcut icon" href="/favicon.ico" />"""
 GOOGLE_TAG_HTML = """<!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-TN7DJB48VK"></script>
 <script>
@@ -885,6 +887,7 @@ def render_pair_page(model):
         schema_json=schema_json,
         brand_html=BRAND_LOGO_HTML,
         google_tag_html=GOOGLE_TAG_HTML,
+        favicon_html=FAVICON_HTML,
     )
 
 
@@ -1339,6 +1342,7 @@ INFO_PAGE_TEMPLATE = """
     <meta name="description" content="{{ page.description }}" />
     <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
+    {{ favicon_html|safe }}
     <script type="application/ld+json">{{ schema_json|safe }}</script>
     {{ google_tag_html|safe }}
     <style>
@@ -1734,6 +1738,7 @@ def render_info_page(slug, extra_html=""):
         extra_html=extra_html,
         robots_directives=ROBOTS_INDEX_DIRECTIVES,
         google_tag_html=GOOGLE_TAG_HTML,
+        favicon_html=FAVICON_HTML,
     )
 
 
@@ -1757,6 +1762,7 @@ def render_home_page():
         schema_json=build_page_schema("Exchange Rates Dashboard", description, "/", menu, "Exchange Rates Dashboard"),
         robots_directives=ROBOTS_INDEX_DIRECTIVES,
         google_tag_html=GOOGLE_TAG_HTML,
+        favicon_html=FAVICON_HTML,
     )
     _HOME_PAGE_CACHE[cache_key] = {"ts": time.time(), "html": html}
     return html
@@ -1890,6 +1896,11 @@ def sitemap_xml():
     )
     xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{items}\n</urlset>\n'
     return Response(xml, mimetype="application/xml")
+
+
+@app.route("/favicon.ico")
+def favicon_ico():
+    return send_from_directory(app.static_folder, "favicon.svg", mimetype="image/svg+xml")
 
 
 @app.route("/chart")
@@ -2073,6 +2084,7 @@ HOME_TEMPLATE = """
     <meta name="description" content="Compare popular currencies against USD, EUR, JPY, GBP, CNY, and VND with live conversion tables and normalized exchange-rate charts." />
     <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
+    {{ favicon_html|safe }}
     <script type="application/ld+json">{{ schema_json|safe }}</script>
     {{ google_tag_html|safe }}
     <style>
@@ -3078,6 +3090,7 @@ PAIR_PAGE_TEMPLATE = """
     <meta name="description" content="{{ description }}" />
     <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
     <link rel="canonical" href="{{ canonical_url }}" />
+    {{ favicon_html|safe }}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ExchangeHub" />
     <meta property="og:title" content="{{ title }}" />
