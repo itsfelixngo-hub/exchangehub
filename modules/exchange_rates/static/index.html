@@ -11,6 +11,47 @@
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
       gtag('config', 'G-TN7DJB48VK');
+      window.exchangeTrackEvent = function(name, params) {
+        if (typeof gtag === 'function') gtag('event', name, params || {});
+      };
+      document.addEventListener('DOMContentLoaded', function() {
+        document.body.addEventListener('click', function(event) {
+          const target = event.target.closest('a, button');
+          if (!target) return;
+          window.exchangeTrackEvent('site_click', {
+            link_text: (target.textContent || target.getAttribute('aria-label') || '').trim().slice(0, 80),
+            link_url: target.getAttribute('href') || location.pathname,
+            link_area: target.closest('.site-header') ? 'header' : target.closest('.site-footer') ? 'footer' : target.closest('.controls') ? 'chart_controls' : 'page',
+            page_path: location.pathname
+          });
+        }, { passive: true });
+        document.body.addEventListener('change', function(event) {
+          const target = event.target;
+          if (!target || !target.matches('select')) return;
+          window.exchangeTrackEvent('control_change', {
+            control_id: target.id || target.name || 'unknown',
+            control_value: String(target.value || '').slice(0, 80),
+            link_area: 'chart_controls',
+            page_path: location.pathname
+          });
+        }, { passive: true });
+        const scrollMarks = [25, 50, 75, 90];
+        const sentScrollMarks = new Set();
+        window.addEventListener('scroll', function() {
+          const doc = document.documentElement;
+          const scrollable = Math.max(1, doc.scrollHeight - window.innerHeight);
+          const percent = Math.round((window.scrollY / scrollable) * 100);
+          scrollMarks.forEach(function(mark) {
+            if (percent >= mark && !sentScrollMarks.has(mark)) {
+              sentScrollMarks.add(mark);
+              window.exchangeTrackEvent('scroll_depth', {
+                percent_scrolled: mark,
+                page_path: location.pathname
+              });
+            }
+          });
+        }, { passive: true });
+      });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -358,6 +399,13 @@
         chart.data.datasets[0].backgroundColor = chartAreaGradient;
         chart.update();
         status.textContent = points.length ? `${points.length} point(s) loaded. ${updatedText(lastTs)}` : `No ${base} to ${target} data found.`;
+        window.exchangeTrackEvent && window.exchangeTrackEvent('chart_tool_loaded', {
+          base_currency: base,
+          target_currency: target,
+          hours: hours,
+          point_count: points.length,
+          page_path: location.pathname
+        });
       }
 
       async function pollLatest(){

@@ -72,6 +72,84 @@ GOOGLE_TAG_HTML = """<!-- Google tag (gtag.js) -->
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', 'G-TN7DJB48VK');
+  window.exchangeTrackEvent = function(name, params) {
+    if (typeof gtag === 'function') {
+      gtag('event', name, params || {});
+    }
+  };
+  document.addEventListener('DOMContentLoaded', function() {
+    function areaFor(element) {
+      if (element.closest('.site-header')) return 'header';
+      if (element.closest('.site-footer')) return 'footer';
+      if (element.closest('.quickbar')) return 'quick_converter';
+      if (element.closest('.converter-panel')) return 'converter_panel';
+      if (element.closest('.matrix-wrap')) return 'rate_matrix';
+      if (element.closest('.mover-list')) return 'pair_movers';
+      if (element.closest('.actions')) return 'top_actions';
+      if (element.closest('.translate-menu')) return 'translate_menu';
+      if (element.closest('.contact-form')) return 'contact_form';
+      return 'page';
+    }
+    document.body.addEventListener('click', function(event) {
+      const target = event.target.closest('a, button');
+      if (!target) return;
+      const href = target.getAttribute('href') || '';
+      const text = (target.textContent || target.getAttribute('aria-label') || '').trim().slice(0, 80);
+      const isPair = /^\/[a-z]{3}-[a-z]{3}\/?$/i.test(href);
+      const isOutbound = /^https?:\/\//i.test(href) && !href.includes(location.hostname);
+      const name = isPair ? 'pair_link_click' : isOutbound ? 'outbound_link_click' : 'site_click';
+      window.exchangeTrackEvent(name, {
+        link_text: text,
+        link_url: href || location.pathname,
+        link_area: areaFor(target),
+        page_path: location.pathname
+      });
+    }, { passive: true });
+    document.body.addEventListener('change', function(event) {
+      const target = event.target;
+      if (!target || !target.matches('select, input[type="range"]')) return;
+      window.exchangeTrackEvent('control_change', {
+        control_id: target.id || target.name || 'unknown',
+        control_value: String(target.value || '').slice(0, 80),
+        link_area: areaFor(target),
+        page_path: location.pathname
+      });
+    }, { passive: true });
+    if ('IntersectionObserver' in window) {
+      const seenSections = new WeakSet();
+      const observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (!entry.isIntersecting || seenSections.has(entry.target)) return;
+          seenSections.add(entry.target);
+          const heading = entry.target.querySelector('h1, h2, h3');
+          window.exchangeTrackEvent('section_view', {
+            section_title: (heading ? heading.textContent : entry.target.id || 'section').trim().slice(0, 100),
+            section_id: entry.target.id || '',
+            page_path: location.pathname
+          });
+        });
+      }, { threshold: 0.45 });
+      document.querySelectorAll('main section, main header, .info-content').forEach(function(section) {
+        observer.observe(section);
+      });
+    }
+    const scrollMarks = [25, 50, 75, 90];
+    const sentScrollMarks = new Set();
+    window.addEventListener('scroll', function() {
+      const doc = document.documentElement;
+      const scrollable = Math.max(1, doc.scrollHeight - window.innerHeight);
+      const percent = Math.round((window.scrollY / scrollable) * 100);
+      scrollMarks.forEach(function(mark) {
+        if (percent >= mark && !sentScrollMarks.has(mark)) {
+          sentScrollMarks.add(mark);
+          window.exchangeTrackEvent('scroll_depth', {
+            percent_scrolled: mark,
+            page_path: location.pathname
+          });
+        }
+      });
+    }, { passive: true });
+  });
 </script>"""
 
 
@@ -1449,6 +1527,12 @@ CONTACT_FORM_TEMPLATE = """
   <h2>Send a message</h2>
   {% if success %}
     <p class="form-status success">Thanks. Your message has been sent.</p>
+    <script>
+      window.exchangeTrackEvent && window.exchangeTrackEvent('contact_submit_success', {
+        form_name: 'contact',
+        page_path: location.pathname
+      });
+    </script>
   {% endif %}
   {% if errors %}
     <div class="form-status error">
@@ -2747,6 +2831,12 @@ HOME_TEMPLATE = """
             if(!res.ok) continue;
             const data = await res.json();
             nextSeries.push(data.series);
+            window.exchangeTrackEvent && window.exchangeTrackEvent('home_chart_series_loaded', {
+              quote_currency: quote,
+              base_currency: base,
+              series_position: index + 1,
+              page_path: location.pathname
+            });
             document.getElementById('home-chart-desc').innerHTML = data.chart_description;
             const nextData = buildHomeChartData(nextSeries);
             if(!homeChart) {
