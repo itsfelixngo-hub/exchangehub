@@ -65,6 +65,14 @@ ROBOTS_DISALLOW_PATHS = [
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 ROBOTS_INDEX_DIRECTIVES = "index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"
+GOOGLE_TAG_HTML = """<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TN7DJB48VK"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-TN7DJB48VK');
+</script>"""
 
 
 @app.after_request
@@ -716,6 +724,7 @@ def render_pair_page(model):
         history_json=history_json,
         schema_json=schema_json,
         brand_html=BRAND_LOGO_HTML,
+        google_tag_html=GOOGLE_TAG_HTML,
     )
 
 
@@ -1171,6 +1180,7 @@ INFO_PAGE_TEMPLATE = """
     <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
     <script type="application/ld+json">{{ schema_json|safe }}</script>
+    {{ google_tag_html|safe }}
     <style>
       body { font-family: Arial, sans-serif; margin:0; color:#1f2933; background:#fff; }
       :root { --page-gutter: clamp(12px, 1.6vw, 26px); --shell-width: 100%; }
@@ -1557,6 +1567,7 @@ def render_info_page(slug, extra_html=""):
         schema_json=build_page_schema(page["title"], page["description"], path, menu, page["heading"]),
         extra_html=extra_html,
         robots_directives=ROBOTS_INDEX_DIRECTIVES,
+        google_tag_html=GOOGLE_TAG_HTML,
     )
 
 
@@ -1579,6 +1590,7 @@ def render_home_page():
         canonical_url=absolute_url("/"),
         schema_json=build_page_schema("Exchange Rates Dashboard", description, "/", menu, "Exchange Rates Dashboard"),
         robots_directives=ROBOTS_INDEX_DIRECTIVES,
+        google_tag_html=GOOGLE_TAG_HTML,
     )
     _HOME_PAGE_CACHE[cache_key] = {"ts": time.time(), "html": html}
     return html
@@ -1896,6 +1908,7 @@ HOME_TEMPLATE = """
     <meta name="robots" content="{{ robots_directives }}" />
     <link rel="canonical" href="{{ canonical_url }}" />
     <script type="application/ld+json">{{ schema_json|safe }}</script>
+    {{ google_tag_html|safe }}
     <style>
       :root { --page-gutter: clamp(12px, 1.6vw, 26px); --shell-width: 100%; }
       body { font-family: Arial, sans-serif; margin: 0; color: #1f2933; background: #fff; }
@@ -2904,6 +2917,7 @@ PAIR_PAGE_TEMPLATE = """
     <meta name="twitter:description" content="{{ description }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="application/ld+json">{{ schema_json|safe }}</script>
+    {{ google_tag_html|safe }}
     <style>
       :root { --page-gutter: clamp(12px, 1.6vw, 26px); --shell-width: 100%; }
       body { font-family: Arial, sans-serif; margin: 0; color: #1f2933; }
