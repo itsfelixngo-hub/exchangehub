@@ -10,41 +10,79 @@ concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
-  deploy:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          script_stop: true
-          script: |
-            set -euo pipefail
+          python-version: '3.11'
+          cache: pip
 
-            APP_NAME="${{ secrets.APP_NAME || 'exchangehub' }}"
-            APP_DIR="${{ secrets.APP_DIR || '/home/deploy/apps/exchangehub' }}"
-            BLUE_PORT="${{ secrets.BLUE_PORT || '5001' }}"
-            GREEN_PORT="${{ secrets.GREEN_PORT || '5002' }}"
-            NGINX_UPSTREAM_CONF="${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
 
-            cd "$APP_DIR"
-            git fetch origin main
-            git reset --hard origin/main
+      - name: Compile Python sources and smoke test
+        env:
+          FLASK_SECRET_KEY: ci-only-secret
+          LOCAL_STORAGE_ENABLED: 'false'
+          R2_ENABLED: 'false'
+        run: |
+          python -m compileall -q .
+          python - <<'PY'
+          from app import app
 
-            cat > .env <<'EOF'
-            ${{ secrets.PROD_ENV }}
-            EOF
+          with app.test_client() as client:
+              response = client.get('/healthz')
+              assert response.status_code == 200, response.text
+          PY
 
-            chmod +x scripts/deploy_blue_green.sh
-            APP_NAME="$APP_NAME" \
-            APP_DIR="$APP_DIR" \
-            BLUE_PORT="$BLUE_PORT" \
-            GREEN_PORT="$GREEN_PORT" \
-            NGINX_UPSTREAM_CONF="$NGINX_UPSTREAM_CONF" \
-            BRANCH="main" \
-            scripts/deploy_blue_green.sh
+      - name: Build Docker image
+        run: docker build --tag exchangehub:ci .
+
+  deploy:
+    needs: verify
+    # Self-hosted runner installed on the production VPS.
+    runs-on: [self-hosted, linux, exchangehub]
+    timeout-minutes: 30
+
+    steps:
+      - name: Deploy on production runner
+        env:
+          APP_NAME: ${{ secrets.APP_NAME || 'exchangehub' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/deploy/apps/exchangehub' }}
+          BLUE_PORT: ${{ secrets.BLUE_PORT || '5001' }}
+          GREEN_PORT: ${{ secrets.GREEN_PORT || '5002' }}
+          NGINX_UPSTREAM_CONF: ${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}
+          PROD_ENV: ${{ secrets.PROD_ENV }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SKIP_GIT_FETCH: 'true'
+        run: |
+          set -euo pipefail
+
+          cd "$APP_DIR"
+          git -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" \
+            fetch --force "https://github.com/${GITHUB_REPOSITORY}.git" \
+            main:refs/remotes/origin/main
+          git reset --hard origin/main
+
+          printf '%s\n' "$PROD_ENV" > .env
+
+          chmod +x scripts/deploy_blue_green.sh
+          APP_NAME="$APP_NAME" \
+          APP_DIR="$APP_DIR" \
+          BLUE_PORT="$BLUE_PORT" \
+          GREEN_PORT="$GREEN_PORT" \
+          NGINX_UPSTREAM_CONF="$NGINX_UPSTREAM_CONF" \
+          BRANCH="main" \
+          SKIP_GIT_FETCH="$SKIP_GIT_FETCH" \
+          scripts/deploy_blue_green.sh

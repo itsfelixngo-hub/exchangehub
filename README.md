@@ -178,15 +178,24 @@ docker-compose up --build -d
 
 GitHub Actions zero-downtime deploy
 
-This repo includes `.github/workflows/deploy.yml` and `scripts/deploy_blue_green.sh` for blue/green VPS deploys.
+This repo includes `.github/workflows/deploy.yml` and `scripts/deploy_blue_green.sh` for blue/green VPS deploys. The deploy job runs directly on a self-hosted GitHub Actions runner installed on the production VPS; it does not use SSH.
+
+Install one GitHub Actions self-hosted runner on the VPS and assign these labels:
+
+```text
+self-hosted, linux, exchangehub
+```
+
+The runner user must have access to the application directory and Docker, and must be able to run `sudo nginx -t` and `sudo nginx -s reload` without an interactive password. Register the runner at repository Settings → Actions → Runners, and keep it dedicated to this production repository.
 
 Flow:
 
 ```text
 git push origin main
--> GitHub Actions SSHes into the VPS
+-> CI verifies the commit on a GitHub-hosted runner
+-> the production self-hosted runner fetches origin/main locally
 -> writes production .env from GitHub Secrets
--> builds a new Docker image
+-> builds a new Docker image locally
 -> starts the new web container on 127.0.0.1:5001 or 127.0.0.1:5002
 -> checks /healthz
 -> switches Nginx upstream and reloads Nginx
@@ -197,11 +206,11 @@ git push origin main
 GitHub repository secrets:
 
 ```text
-VPS_HOST
-VPS_USER
-VPS_SSH_KEY
-VPS_SSH_PORT        # optional, defaults to 22
 APP_DIR             # optional, defaults to /home/deploy/exchangehub
+APP_NAME            # optional, defaults to exchangehub
+BLUE_PORT           # optional, defaults to 5001
+GREEN_PORT          # optional, defaults to 5002
+NGINX_UPSTREAM_CONF # optional, defaults to /etc/nginx/conf.d/exchangehub-upstream.conf
 PROD_ENV            # full production .env content
 ```
 

@@ -23,8 +23,10 @@ MAIL_DATA_ROOT="${MAIL_DATA_ROOT:-${APP_DIR}/docker-data/dms}"
 
 cd "$APP_DIR"
 
-git fetch origin "$BRANCH"
-git reset --hard "origin/$BRANCH"
+if [[ "${SKIP_GIT_FETCH:-false}" != "true" ]]; then
+  git fetch origin "$BRANCH"
+  git reset --hard "origin/$BRANCH"
+fi
 
 if [[ -z "$IMAGE_TAG" ]]; then
   IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%s)"
