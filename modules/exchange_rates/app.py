@@ -3124,6 +3124,15 @@ HOME_TEMPLATE = """
         }).join('');
         document.getElementById('converter-results').innerHTML = html;
       }
+      // Every timestamp renders in UTC so the chart agrees with the
+      // server-rendered "Updated" stamp for visitors in any timezone.
+      function formatUtcTick(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      function formatUtcFull(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+      }
+      let homeChartTimestamps = [];
       function buildHomeChartData(nextSeries) {
         // A pair can have a shorter history than the others (for example after
         // a newly configured pair starts collecting). Comparing those series
@@ -3147,7 +3156,8 @@ HOME_TEMPLATE = """
           };
         }).filter(item => item.data.length);
         const allTimestamps = Array.from(new Set(comparableSeries.flatMap(item => item.data.map(point => point.ts)))).sort((a, b) => a - b);
-        const labels = allTimestamps.map(ts => new Date(ts * 1000).toLocaleString());
+        homeChartTimestamps = allTimestamps;
+        const labels = allTimestamps.map(formatUtcTick);
         const datasets = comparableSeries.map((item, index) => {
           const byTs = new Map(item.data.map(point => [point.ts, point.value]));
           const color = palette[index % palette.length];
@@ -3184,12 +3194,13 @@ HOME_TEMPLATE = """
           },
           tooltip: {
             callbacks: {
+              title: items => (items.length ? formatUtcFull(homeChartTimestamps[items[0].dataIndex]) : ''),
               label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(2)}`
             }
           }
         },
         scales: {
-          x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
+          x: { grid: { display: false }, border: { display: false }, title: { display: true, text: 'UTC', color: '#667085', font: { size: 11 } }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
           y: { position: 'right', grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 5, padding: 8, color: '#667085', callback: value => Number(value).toFixed(0) } }
         }
       };
@@ -3811,7 +3822,16 @@ PAIR_PAGE_TEMPLATE = """
     {{ footer_html|safe }}
     <script>
       const historyData = {{ history_json|safe }};
-      const labels = historyData.map(point => new Date(point[0] * 1000).toLocaleString());
+      // Every timestamp renders in UTC so the chart agrees with the
+      // server-rendered "Updated" stamp for visitors in any timezone.
+      function formatUtcTick(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      function formatUtcFull(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+      }
+      const timestamps = historyData.map(point => point[0]);
+      const labels = timestamps.map(formatUtcTick);
       const values = historyData.map(point => point[1]);
       function formatRate(value){
         const n = Number(value);
@@ -3927,10 +3947,13 @@ PAIR_PAGE_TEMPLATE = """
           interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { label: context => `${context.dataset.label}: ${formatRate(context.parsed.y)}` } }
+            tooltip: { callbacks: {
+              title: items => (items.length ? formatUtcFull(timestamps[items[0].dataIndex]) : ''),
+              label: context => `${context.dataset.label}: ${formatRate(context.parsed.y)}`
+            } }
           },
           scales: {
-            x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
+            x: { grid: { display: false }, border: { display: false }, title: { display: true, text: 'UTC', color: '#667085', font: { size: 11 } }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
             y: { position: 'right', beginAtZero: false, grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 4, padding: 8, color: '#667085', callback: value => formatRate(value) } }
           }
         }
