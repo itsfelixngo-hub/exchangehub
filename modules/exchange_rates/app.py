@@ -2829,9 +2829,30 @@ HOME_TEMPLATE = """
         document.getElementById('converter-results').innerHTML = html;
       }
       function buildHomeChartData(nextSeries) {
-        const allTimestamps = Array.from(new Set(nextSeries.flatMap(item => item.data.map(point => point.ts)))).sort((a, b) => a - b);
+        // A pair can have a shorter history than the others (for example after
+        // a newly configured pair starts collecting). Comparing those series
+        // against the full, oldest timeline makes the newer lines appear
+        // bunched up at the right edge. Use the common time window instead.
+        const validSeries = nextSeries.filter(item => item.data && item.data.length);
+        const commonStart = validSeries.length
+          ? Math.max(...validSeries.map(item => Number(item.data[0].ts)))
+          : 0;
+        const comparableSeries = validSeries.map(item => {
+          const points = item.data
+            .filter(point => Number(point.ts) >= commonStart)
+            .map(point => ({ ts: Number(point.ts), value: Number(point.value) }))
+            .filter(point => Number.isFinite(point.ts) && Number.isFinite(point.value));
+          const firstValue = points[0]?.value;
+          return {
+            ...item,
+            data: firstValue !== undefined && firstValue !== 0
+              ? points.map(point => ({ ...point, value: point.value / firstValue * 100 }))
+              : []
+          };
+        }).filter(item => item.data.length);
+        const allTimestamps = Array.from(new Set(comparableSeries.flatMap(item => item.data.map(point => point.ts)))).sort((a, b) => a - b);
         const labels = allTimestamps.map(ts => new Date(ts * 1000).toLocaleString());
-        const datasets = nextSeries.map((item, index) => {
+        const datasets = comparableSeries.map((item, index) => {
           const byTs = new Map(item.data.map(point => [point.ts, point.value]));
           const color = palette[index % palette.length];
           const lineStyle = lineStyles[index % lineStyles.length];
