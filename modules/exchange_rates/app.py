@@ -1846,15 +1846,22 @@ INFO_PAGE_TEMPLATE = """
           return;
         }
         setTranslateCookie(`/en/${lang}`);
+        refreshTimeDisplays();
         ensureTranslateLibrary().then(() => {
           const combo = document.querySelector('.goog-te-combo');
           if (combo) {
             combo.value = lang;
             combo.dispatchEvent(new Event('change'));
+            refreshTimeDisplays();
           } else {
             location.reload();
           }
         });
+      }
+      function refreshTimeDisplays() {
+        // Defined only on pages that actually show timestamps or a chart.
+        if (typeof initLocalTimes === 'function') initLocalTimes();
+        if (typeof refreshChartTimeLabels === 'function') refreshChartTimeLabels();
       }
       function initTranslateMenu() {
         document.querySelectorAll('.translate-widget').forEach(widget => {
@@ -3132,12 +3139,35 @@ HOME_TEMPLATE = """
         }).join('');
         document.getElementById('converter-results').innerHTML = html;
       }
-      // Instants travel as UTC and are rendered in the visitor's own zone.
-      // The server-rendered text stays UTC, so cached HTML is byte-identical
-      // for every visitor and still reads correctly without JavaScript.
+      // Instants travel as UTC; only the display is localised. Picking a
+      // language in the translate menu pins that language's timezone and
+      // date format, so a reader on the Vietnamese page always sees Vietnam
+      // time. English keeps following the visitor's own device zone.
+      // Thai needs an explicit Gregorian calendar or Intl renders 2569.
+      const LANG_TIME = {
+        'en':    { locale: 'en-GB',              timeZone: null },
+        'vi':    { locale: 'vi-VN',              timeZone: 'Asia/Ho_Chi_Minh' },
+        'th':    { locale: 'th-TH-u-ca-gregory', timeZone: 'Asia/Bangkok' },
+        'ja':    { locale: 'ja-JP',              timeZone: 'Asia/Tokyo' },
+        'ko':    { locale: 'ko-KR',              timeZone: 'Asia/Seoul' },
+        'zh-CN': { locale: 'zh-CN',              timeZone: 'Asia/Shanghai' }
+      };
+      function activeTimeLocale(){
+        const match = /(?:^|; *)googtrans=[/][a-z-]+[/]([a-zA-Z-]+)/.exec(document.cookie);
+        return (match && LANG_TIME[match[1]]) || LANG_TIME.en;
+      }
+      function stampOptions(extra){
+        const cfg = activeTimeLocale();
+        const opts = Object.assign({ hour12: false }, extra);
+        if (cfg.timeZone) opts.timeZone = cfg.timeZone;
+        return { locale: cfg.locale, opts: opts };
+      }
       function localZoneLabel(){
+        const cfg = activeTimeLocale();
         try {
-          const parts = new Intl.DateTimeFormat('en-GB', { timeZoneName: 'shortOffset' }).formatToParts(new Date());
+          const base = { timeZoneName: 'shortOffset' };
+          if (cfg.timeZone) base.timeZone = cfg.timeZone;
+          const parts = new Intl.DateTimeFormat(cfg.locale, base).formatToParts(new Date());
           const zone = parts.find(part => part.type === 'timeZoneName');
           if (zone) return zone.value;
         } catch (err) { /* older browsers fall through to the manual offset */ }
@@ -3146,16 +3176,19 @@ HOME_TEMPLATE = """
         return 'GMT' + (offset < 0 ? '-' : '+') + Math.floor(Math.abs(offset) / 60) + (minutes ? ':' + String(minutes).padStart(2, '0') : '');
       }
       function formatStampTick(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+        const fmt = stampOptions({ day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+        return new Date(ts * 1000).toLocaleString(fmt.locale, fmt.opts);
       }
       function formatStampFull(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' (' + localZoneLabel() + ')';
+        const fmt = stampOptions({ day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return new Date(ts * 1000).toLocaleString(fmt.locale, fmt.opts) + ' (' + localZoneLabel() + ')';
       }
       function initLocalTimes(){
         document.querySelectorAll('time.localtime[datetime]').forEach(node => {
-          const ms = Date.parse(node.getAttribute('datetime'));
+          const value = node.getAttribute('datetime');
+          const ms = Date.parse(value);
           if (!Number.isFinite(ms)) return;
-          node.title = node.textContent.trim();   // keep the UTC value on hover
+          node.title = value;   // the UTC instant stays available on hover
           node.textContent = formatStampFull(ms / 1000);
         });
       }
@@ -3234,6 +3267,12 @@ HOME_TEMPLATE = """
       };
       function setChartStatus(message){
         if(chartStatus) chartStatus.textContent = message;
+      }
+      function refreshChartTimeLabels(){
+        if (!homeChart || !homeChartTimestamps.length) return;
+        homeChart.data.labels = homeChartTimestamps.map(formatStampTick);
+        homeChart.options.scales.x.title.text = localZoneLabel();
+        homeChart.update('none');
       }
       function chartLoadDelay(index){
         if(index === 0) return 0;
@@ -3408,15 +3447,22 @@ HOME_TEMPLATE = """
           return;
         }
         setTranslateCookie(`/en/${lang}`);
+        refreshTimeDisplays();
         ensureTranslateLibrary().then(() => {
           const combo = document.querySelector('.goog-te-combo');
           if (combo) {
             combo.value = lang;
             combo.dispatchEvent(new Event('change'));
+            refreshTimeDisplays();
           } else {
             location.reload();
           }
         });
+      }
+      function refreshTimeDisplays() {
+        // Defined only on pages that actually show timestamps or a chart.
+        if (typeof initLocalTimes === 'function') initLocalTimes();
+        if (typeof refreshChartTimeLabels === 'function') refreshChartTimeLabels();
       }
       function initTranslateMenu() {
         document.querySelectorAll('.translate-widget').forEach(widget => {
@@ -3850,12 +3896,35 @@ PAIR_PAGE_TEMPLATE = """
     {{ footer_html|safe }}
     <script>
       const historyData = {{ history_json|safe }};
-      // Instants travel as UTC and are rendered in the visitor's own zone.
-      // The server-rendered text stays UTC, so cached HTML is byte-identical
-      // for every visitor and still reads correctly without JavaScript.
+      // Instants travel as UTC; only the display is localised. Picking a
+      // language in the translate menu pins that language's timezone and
+      // date format, so a reader on the Vietnamese page always sees Vietnam
+      // time. English keeps following the visitor's own device zone.
+      // Thai needs an explicit Gregorian calendar or Intl renders 2569.
+      const LANG_TIME = {
+        'en':    { locale: 'en-GB',              timeZone: null },
+        'vi':    { locale: 'vi-VN',              timeZone: 'Asia/Ho_Chi_Minh' },
+        'th':    { locale: 'th-TH-u-ca-gregory', timeZone: 'Asia/Bangkok' },
+        'ja':    { locale: 'ja-JP',              timeZone: 'Asia/Tokyo' },
+        'ko':    { locale: 'ko-KR',              timeZone: 'Asia/Seoul' },
+        'zh-CN': { locale: 'zh-CN',              timeZone: 'Asia/Shanghai' }
+      };
+      function activeTimeLocale(){
+        const match = /(?:^|; *)googtrans=[/][a-z-]+[/]([a-zA-Z-]+)/.exec(document.cookie);
+        return (match && LANG_TIME[match[1]]) || LANG_TIME.en;
+      }
+      function stampOptions(extra){
+        const cfg = activeTimeLocale();
+        const opts = Object.assign({ hour12: false }, extra);
+        if (cfg.timeZone) opts.timeZone = cfg.timeZone;
+        return { locale: cfg.locale, opts: opts };
+      }
       function localZoneLabel(){
+        const cfg = activeTimeLocale();
         try {
-          const parts = new Intl.DateTimeFormat('en-GB', { timeZoneName: 'shortOffset' }).formatToParts(new Date());
+          const base = { timeZoneName: 'shortOffset' };
+          if (cfg.timeZone) base.timeZone = cfg.timeZone;
+          const parts = new Intl.DateTimeFormat(cfg.locale, base).formatToParts(new Date());
           const zone = parts.find(part => part.type === 'timeZoneName');
           if (zone) return zone.value;
         } catch (err) { /* older browsers fall through to the manual offset */ }
@@ -3864,16 +3933,19 @@ PAIR_PAGE_TEMPLATE = """
         return 'GMT' + (offset < 0 ? '-' : '+') + Math.floor(Math.abs(offset) / 60) + (minutes ? ':' + String(minutes).padStart(2, '0') : '');
       }
       function formatStampTick(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+        const fmt = stampOptions({ day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+        return new Date(ts * 1000).toLocaleString(fmt.locale, fmt.opts);
       }
       function formatStampFull(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' (' + localZoneLabel() + ')';
+        const fmt = stampOptions({ day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return new Date(ts * 1000).toLocaleString(fmt.locale, fmt.opts) + ' (' + localZoneLabel() + ')';
       }
       function initLocalTimes(){
         document.querySelectorAll('time.localtime[datetime]').forEach(node => {
-          const ms = Date.parse(node.getAttribute('datetime'));
+          const value = node.getAttribute('datetime');
+          const ms = Date.parse(value);
           if (!Number.isFinite(ms)) return;
-          node.title = node.textContent.trim();   // keep the UTC value on hover
+          node.title = value;   // the UTC instant stays available on hover
           node.textContent = formatStampFull(ms / 1000);
         });
       }
@@ -3981,8 +4053,9 @@ PAIR_PAGE_TEMPLATE = """
         });
         return chartLibraryPromise;
       }
+      let pairChart = null;
       function drawPairChart(){
-      new Chart(document.getElementById('pair-chart').getContext('2d'), {
+      pairChart = new Chart(document.getElementById('pair-chart').getContext('2d'), {
         type: 'line',
         plugins: [latestValueBadge],
         data: {
@@ -4009,6 +4082,12 @@ PAIR_PAGE_TEMPLATE = """
       }
       function startPairChart(){
         ensureChartLibrary().then(drawPairChart).catch(() => {});
+      }
+      function refreshChartTimeLabels(){
+        if (!pairChart) return;
+        pairChart.data.labels = timestamps.map(formatStampTick);
+        pairChart.options.scales.x.title.text = localZoneLabel();
+        pairChart.update('none');
       }
       (function schedulePairChart(){
         const canvas = document.getElementById('pair-chart');
@@ -4096,15 +4175,22 @@ PAIR_PAGE_TEMPLATE = """
           return;
         }
         setTranslateCookie(`/en/${lang}`);
+        refreshTimeDisplays();
         ensureTranslateLibrary().then(() => {
           const combo = document.querySelector('.goog-te-combo');
           if (combo) {
             combo.value = lang;
             combo.dispatchEvent(new Event('change'));
+            refreshTimeDisplays();
           } else {
             location.reload();
           }
         });
+      }
+      function refreshTimeDisplays() {
+        // Defined only on pages that actually show timestamps or a chart.
+        if (typeof initLocalTimes === 'function') initLocalTimes();
+        if (typeof refreshChartTimeLabels === 'function') refreshChartTimeLabels();
       }
       function initTranslateMenu() {
         document.querySelectorAll('.translate-widget').forEach(widget => {
