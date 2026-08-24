@@ -26,7 +26,9 @@ python3 fetch_rates.py
 3. Run the web server:
 
 ```bash
-python3 app.py
+python3 app.py                       # dev
+# production (what the container runs):
+gunicorn --bind 0.0.0.0:5000 --workers 2 --worker-class gthread --threads 8 app:app
 ```
 
 4. Open http://localhost:5000 in your browser to view the chart.
@@ -56,6 +58,36 @@ API endpoints
 - `/api/latest?base=VND&target=USD` — latest rate
 - `/api/history?base=VND&target=USD&hours=24` — last N hours
 - `/api/convert?amount=100&base=VND&target=USD` — convert using latest rate
+
+Performance
+
+Pages are rendered server-side and served from an in-process cache, so a request
+normally costs no rate-data work at all.
+
+- A background warmer thread builds the rate model at startup and refreshes it
+  every `PAGE_CACHE_SECONDS`, so no visitor ever pays for a cold render.
+- When a cached page does expire, the stale copy is served immediately and the
+  rebuild happens on a background thread (`PAGE_STALE_SECONDS` bounds how stale).
+- Derived cross pairs (for example `EUR/JPY`) come from a single USD timeline
+  built once per cache window instead of rescanning every stored entry per pair.
+- Only pairs listed in `rate_pairs.json` are fetched from R2; misses are cached
+  so derived pairs do not cost a round trip each.
+- HTML/JSON responses are gzipped in-process and carry `Cache-Control`, so a CDN
+  or `nginx` (see `deploy/nginx-exchangehub.conf`) can serve most traffic.
+- Chart payloads are downsampled to `CHART_MAX_POINTS` and Chart.js / Google
+  Translate load lazily rather than blocking first paint.
+
+Tuning environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PAGE_CACHE_SECONDS` | `60` | How long a rendered page stays fresh |
+| `PAGE_STALE_SECONDS` | `900` | Extra window where a stale page is served while refreshing |
+| `WARM_CACHE_ON_START` | `true` | Start the background warmer thread |
+| `CHART_MAX_POINTS` | `400` | Points kept per chart series |
+| `GZIP_LEVEL` / `GZIP_MIN_BYTES` | `6` / `1024` | Response compression |
+| `STATIC_MAX_AGE` | `86400` | `Cache-Control` max-age for `/static` |
+| `WEB_WORKERS` / `WEB_THREADS` | `2` / `8` | gunicorn sizing (docker-compose) |
 
 Notes
 

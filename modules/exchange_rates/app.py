@@ -10,6 +10,9 @@ import re
 import secrets
 import smtplib
 import ssl
+import gzip
+import hashlib
+import threading
 from html import escape
 
 try:
@@ -26,14 +29,81 @@ RATES_DIR = os.path.join(UPLOADS_DIR, "rates")
 RATE_CONFIG_JSON = os.environ.get("RATE_CONFIG_JSON", os.path.join(MODULE_DIR, "rate_pairs.json"))
 R2_READ_CACHE_SECONDS = int(os.environ.get("R2_READ_CACHE_SECONDS", "60"))
 PAGE_CACHE_SECONDS = int(os.environ.get("PAGE_CACHE_SECONDS", str(R2_READ_CACHE_SECONDS)))
+# Serve a stale cached page for up to this long past expiry while a background
+# thread rebuilds it, so no visitor ever waits for a cold render.
+PAGE_STALE_SECONDS = int(os.environ.get("PAGE_STALE_SECONDS", "900"))
+# Max points inlined into a pair chart; the canvas cannot resolve more than this.
+CHART_MAX_POINTS = int(os.environ.get("CHART_MAX_POINTS", "400"))
+GZIP_MIN_BYTES = int(os.environ.get("GZIP_MIN_BYTES", "1024"))
+GZIP_LEVEL = int(os.environ.get("GZIP_LEVEL", "6"))
+GZIP_CACHE_ENTRIES = int(os.environ.get("GZIP_CACHE_ENTRIES", "256"))
+WARM_CACHE_ON_START = os.environ.get("WARM_CACHE_ON_START", "true").lower() not in {"0", "false", "no"}
+
 _R2_PAIR_CACHE = {}
 _R2_ALL_RATES_CACHE = {"ts": 0, "entries": None}
+_LOCAL_RATES_CACHE = {"ts": 0, "entries": None}
+_RATE_CONFIG_CACHE = {"mtime": None, "pairs": None}
+_USD_TIMELINE_CACHE = {"ts": 0, "timeline": None}
 _HOME_MODEL_CACHE = {}
 _HOME_PAGE_CACHE = {}
 _PAIR_PAGE_CACHE = {}
+_INFO_PAGE_CACHE = {}
+_GZIP_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+_REFRESHING = set()
+
+
+def cache_lookup(store, key, ttl=None):
+    """Return (value, state) where state is "fresh", "stale" or "miss"."""
+    ttl = PAGE_CACHE_SECONDS if ttl is None else ttl
+    entry = store.get(key)
+    if not entry:
+        return None, "miss"
+    age = time.time() - entry["ts"]
+    if age < ttl:
+        return entry["value"], "fresh"
+    if age < ttl + PAGE_STALE_SECONDS:
+        return entry["value"], "stale"
+    return None, "miss"
+
+
+def cache_store(store, key, value):
+    store[key] = {"ts": time.time(), "value": value}
+    return value
+
+
+def _refresh_in_background(store, key, builder, token):
+    def run():
+        try:
+            cache_store(store, key, builder())
+        except Exception:
+            pass
+        finally:
+            with _CACHE_LOCK:
+                _REFRESHING.discard(token)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def cached_or_build(store, key, builder, ttl=None):
+    """Serve fresh from cache, or stale-while-revalidate, or build synchronously."""
+    value, state = cache_lookup(store, key, ttl)
+    if state == "fresh":
+        return value
+    if state == "stale":
+        token = (id(store), key)
+        with _CACHE_LOCK:
+            already = token in _REFRESHING
+            if not already:
+                _REFRESHING.add(token)
+        if not already:
+            _refresh_in_background(store, key, builder, token)
+        return value
+    return cache_store(store, key, builder())
 
 app = Flask(__name__, static_folder=os.path.join(MODULE_DIR, "static"))
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = int(os.environ.get("STATIC_MAX_AGE", "86400"))
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
 CONTACT_EMAIL = os.environ.get("SITE_CONTACT_EMAIL", "contact@ratehubfx.com")
@@ -67,7 +137,11 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 ROBOTS_INDEX_DIRECTIVES = "index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"
 FAVICON_HTML = """<link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
 <link rel="shortcut icon" href="/favicon.ico" />"""
-GOOGLE_TAG_HTML = """<!-- Google tag (gtag.js) -->
+GOOGLE_TAG_HTML = """<link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
+<link rel="dns-prefetch" href="https://www.google-analytics.com" />
+<link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+<link rel="dns-prefetch" href="https://translate.google.com" />
+<!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-TN7DJB48VK"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
@@ -237,10 +311,91 @@ GOOGLE_TAG_HTML = """<!-- Google tag (gtag.js) -->
 </script>"""
 
 
+HTML_CACHE_CONTROL = "public, max-age={0}, stale-while-revalidate={1}".format(
+    PAGE_CACHE_SECONDS, PAGE_CACHE_SECONDS * 10
+)
+STATIC_CACHE_CONTROL = "public, max-age=86400"
+API_CACHE_CONTROL = "public, max-age={0}".format(PAGE_CACHE_SECONDS)
+NO_STORE_PREFIXES = ("/contact",)
+COMPRESSIBLE_MIMETYPES = {
+    "text/html",
+    "text/css",
+    "text/plain",
+    "text/xml",
+    "application/json",
+    "application/javascript",
+    "application/xml",
+    "image/svg+xml",
+}
+
+
+def cache_control_for(response):
+    path = request.path
+    if request.method not in ("GET", "HEAD") or response.status_code != 200:
+        return None
+    # Anything that personalises a response (the contact form's rotating
+    # challenge) must never be shared; everything else is identical for every
+    # visitor and is safe for the CDN to hold.
+    if any(path.startswith(prefix) for prefix in NO_STORE_PREFIXES):
+        return "no-store"
+    if response.headers.get("Set-Cookie"):
+        return "no-store"
+    if path.startswith("/static/") or path in {"/favicon.ico", "/robots.txt"}:
+        return STATIC_CACHE_CONTROL
+    if path.startswith("/api/") or path == "/sitemap.xml":
+        return API_CACHE_CONTROL
+    if response.mimetype == "text/html":
+        return HTML_CACHE_CONTROL
+    return None
+
+
+def compress_cached(data):
+    """gzip with a small memo: cached pages are byte-identical across requests."""
+    key = hashlib.blake2b(data, digest_size=16).digest()
+    hit = _GZIP_CACHE.get(key)
+    if hit is not None:
+        return hit
+
+    packed = gzip.compress(data, GZIP_LEVEL)
+    with _CACHE_LOCK:
+        if len(_GZIP_CACHE) > GZIP_CACHE_ENTRIES:
+            _GZIP_CACHE.clear()
+        _GZIP_CACHE[key] = packed
+    return packed
+
+
+def gzip_response(response):
+    """Compress text responses in-process so the site is fast behind any proxy."""
+    if response.direct_passthrough or response.status_code != 200:
+        return response
+    if response.mimetype not in COMPRESSIBLE_MIMETYPES:
+        return response
+    if response.headers.get("Content-Encoding"):
+        return response
+    if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+        return response
+
+    data = response.get_data()
+    if len(data) < GZIP_MIN_BYTES:
+        return response
+
+    response.set_data(compress_cached(data))
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(response.content_length)
+    return response
+
+
 @app.after_request
 def add_robots_header(response):
     if response.status_code == 200 and response.mimetype == "text/html":
         response.headers["X-Robots-Tag"] = ROBOTS_INDEX_DIRECTIVES
+
+    cache_control = cache_control_for(response)
+    if cache_control and "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = cache_control
+
+    response = gzip_response(response)
+    response.headers.add("Vary", "Accept-Encoding")
     return response
 
 
@@ -404,8 +559,14 @@ def page_cache_fresh(ts: float) -> bool:
     return bool(ts and time.time() - ts < PAGE_CACHE_SECONDS)
 
 
+def configured_pair_keys():
+    return {pair_key(pair_base, pair_target) for pair_base, pair_target in load_rate_config()}
+
+
 def load_pair_entries(base: str, target: str):
-    if r2_enabled():
+    # Only configured pairs have a stored file. Asking R2 for the rest was a
+    # wasted round trip per derived pair on every rebuild.
+    if r2_enabled() and pair_key(base, target) in configured_pair_keys():
         cache_key = pair_key(base, target)
         cached = _R2_PAIR_CACHE.get(cache_key)
         if cached and r2_cache_fresh(cached["ts"]):
@@ -413,8 +574,11 @@ def load_pair_entries(base: str, target: str):
 
         try:
             entries = get_json(f"rates/{pair_key(base, target)}.json")
-            if isinstance(entries, list):
-                _R2_PAIR_CACHE[cache_key] = {"ts": time.time(), "entries": entries}
+            entries = entries if isinstance(entries, list) else []
+            # Cache misses too: most menu pairs are derived and have no stored
+            # file, and an uncached miss costs a full R2 round trip every call.
+            _R2_PAIR_CACHE[cache_key] = {"ts": time.time(), "entries": entries}
+            if entries:
                 return entries
         except Exception:
             pass
@@ -448,6 +612,9 @@ def load_json_rates():
         except Exception:
             pass
 
+    if _LOCAL_RATES_CACHE["entries"] is not None and r2_cache_fresh(_LOCAL_RATES_CACHE["ts"]):
+        return _LOCAL_RATES_CACHE["entries"]
+
     if not os.path.isdir(RATES_DIR):
         return []
     entries = []
@@ -459,7 +626,47 @@ def load_json_rates():
                 entries.extend(json.load(f))
         except Exception:
             pass
+    _LOCAL_RATES_CACHE["ts"] = time.time()
+    _LOCAL_RATES_CACHE["entries"] = entries
     return entries
+
+
+def usd_timeline():
+    """Timestamp-ordered USD conversion tables built once per cache window.
+
+    Deriving a pair history used to rescan every stored entry, so a page that
+    shows N derived pairs paid O(N * entries). Building the timeline once turns
+    that into O(entries) plus O(timestamps) per pair.
+    """
+    if _USD_TIMELINE_CACHE["timeline"] is not None and r2_cache_fresh(_USD_TIMELINE_CACHE["ts"]):
+        return _USD_TIMELINE_CACHE["timeline"]
+
+    by_ts = {}
+    for entry in load_json_rates():
+        add_entry_to_usd_table(by_ts.setdefault(entry.get("ts", 0), {}), entry)
+    timeline = [(ts, by_ts[ts]) for ts in sorted(by_ts.keys())]
+    _USD_TIMELINE_CACHE["ts"] = time.time()
+    _USD_TIMELINE_CACHE["timeline"] = timeline
+    return timeline
+
+
+def derived_pair_history(base: str, target: str, since=None):
+    data = []
+    for ts, table in usd_timeline():
+        if since is not None and ts < since:
+            continue
+        rate = derive_rate_from_usd_table(base, target, table)
+        if rate is not None:
+            data.append({"ts": ts, "rate": rate})
+    return data
+
+
+def derived_pair_latest(base: str, target: str):
+    for ts, table in reversed(usd_timeline()):
+        rate = derive_rate_from_usd_table(base, target, table)
+        if rate is not None:
+            return {"ts": ts, "rate": rate, "base": base, "target": target}
+    return None
 
 
 def parse_pair_key(pair: str):
@@ -479,6 +686,20 @@ def normalize_pairs(pairs):
 
 
 def load_rate_config():
+    try:
+        mtime = os.path.getmtime(RATE_CONFIG_JSON)
+    except OSError:
+        mtime = None
+    if _RATE_CONFIG_CACHE["pairs"] is not None and _RATE_CONFIG_CACHE["mtime"] == mtime:
+        return _RATE_CONFIG_CACHE["pairs"]
+
+    pairs = _read_rate_config()
+    _RATE_CONFIG_CACHE["mtime"] = mtime
+    _RATE_CONFIG_CACHE["pairs"] = pairs
+    return pairs
+
+
+def _read_rate_config():
     with open(RATE_CONFIG_JSON, "r", encoding="utf-8") as f:
         config = json.load(f)
     if isinstance(config, list):
@@ -725,7 +946,7 @@ def pair_history(base: str, target: str):
     direct = load_pair_entries(base, target)
     if direct:
         return direct
-    return derive_history_from_entries(load_json_rates(), base, target)
+    return derived_pair_history(base, target)
 
 
 def build_pair_model(base: str, target: str):
@@ -766,6 +987,47 @@ def build_pair_model(base: str, target: str):
         "amounts": pair_amounts(base),
         "reverse_rate": (1 / rates[-1]) if rates and rates[-1] else None,
     }
+
+
+def downsample_points(points, max_points=None):
+    """Thin a time series down to something a chart canvas can actually show.
+
+    Buckets are keyed on absolute epoch time rather than on position, so every
+    series sampled with the same budget keeps the same timestamps and the home
+    chart can still align its lines.
+    """
+    max_points = CHART_MAX_POINTS if max_points is None else max_points
+    if len(points) <= max_points or max_points < 2:
+        return points
+
+    span = int(points[-1]["ts"]) - int(points[0]["ts"])
+    if span <= 0:
+        return points[-max_points:]
+
+    bucket = max(1, span // (max_points - 1))
+    kept = []
+    last_bucket = None
+    for point in points:
+        current = int(point["ts"]) // bucket
+        if current != last_bucket:
+            kept.append(point)
+            last_bucket = current
+    if kept[-1] is not points[-1]:
+        kept.append(points[-1])
+    return kept
+
+
+def chart_series(history, max_points=None):
+    """Compact [[ts, rate], ...] payload for the inline pair chart.
+
+    The full history is ~2000 verbose objects (~90KB of HTML) for a chart that
+    is a few hundred pixels wide.
+    """
+    points = [entry for entry in history if entry.get("rate") is not None]
+    return [
+        [int(entry["ts"]), float(entry["rate"])]
+        for entry in downsample_points(points, max_points)
+    ]
 
 
 def render_pair_page(model):
@@ -862,7 +1124,7 @@ def render_pair_page(model):
     for amount in model["amounts"]:
         converted = "-" if reverse_rate is None else f"{format_amount(amount * reverse_rate)} {base}"
         reverse_rows.append((f"{amount:,} {target}", converted))
-    history_json = json.dumps(model["history"])
+    history_json = json.dumps(chart_series(model["history"]), separators=(",", ":"))
     schema_json = json.dumps(schema)
 
     return render_template_string(
@@ -895,13 +1157,11 @@ def render_cached_pair_page(base: str, target: str):
     base = base.upper()
     target = target.upper()
     cache_key = (site_base_url(), base, target)
-    cached = _PAIR_PAGE_CACHE.get(cache_key)
-    if cached and page_cache_fresh(cached["ts"]):
-        return cached["html"]
-
-    html = render_pair_page(build_pair_model(base, target))
-    _PAIR_PAGE_CACHE[cache_key] = {"ts": time.time(), "html": html}
-    return html
+    return cached_or_build(
+        _PAIR_PAGE_CACHE,
+        cache_key,
+        lambda: render_pair_page(build_pair_model(base, target)),
+    )
 
 
 MAJOR_COLUMNS = ["USD", "EUR", "JPY", "GBP", "CNY", "VND"]
@@ -994,7 +1254,7 @@ def normalized_history(base, quote):
             first = rate
         if first:
             points.append({"ts": entry["ts"], "value": rate / first * 100})
-    return points
+    return downsample_points(points)
 
 
 def build_home_chart_series(base, quote):
@@ -1048,13 +1308,11 @@ def build_home_model(quote="USD", include_series=True):
 
 def cached_home_model(quote="USD", include_series=True):
     key = (str(quote or "USD").upper(), bool(include_series))
-    cached = _HOME_MODEL_CACHE.get(key)
-    if cached and page_cache_fresh(cached["ts"]):
-        return cached["model"]
-
-    model = build_home_model(key[0], include_series=include_series)
-    _HOME_MODEL_CACHE[key] = {"ts": time.time(), "model": model}
-    return model
+    return cached_or_build(
+        _HOME_MODEL_CACHE,
+        key,
+        lambda: build_home_model(key[0], include_series=key[1]),
+    )
 
 
 def build_menu_model(active_base=None, active_target=None):
@@ -1556,20 +1814,39 @@ INFO_PAGE_TEMPLATE = """
           document.cookie = `googtrans=${value || ''}; path=/; domain=.${location.hostname}${maxAge}`;
         }
       }
+      let translateLibraryPromise = null;
+      function ensureTranslateLibrary() {
+        if (window.google && window.google.translate) return Promise.resolve();
+        if (translateLibraryPromise) return translateLibraryPromise;
+        translateLibraryPromise = new Promise(resolve => {
+          const script = document.createElement('script');
+          script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = resolve;
+          document.head.appendChild(script);
+        });
+        return translateLibraryPromise;
+      }
+      function hasActiveTranslation() {
+        return /(^|; *)googtrans=[/][a-z-]+[/][a-z-]+/i.test(document.cookie);
+      }
       function applyTranslation(lang) {
-        const combo = document.querySelector('.goog-te-combo');
         if (lang === 'en') {
           setTranslateCookie('');
           location.reload();
           return;
         }
         setTranslateCookie(`/en/${lang}`);
-        if (combo) {
-          combo.value = lang;
-          combo.dispatchEvent(new Event('change'));
-        } else {
-          location.reload();
-        }
+        ensureTranslateLibrary().then(() => {
+          const combo = document.querySelector('.goog-te-combo');
+          if (combo) {
+            combo.value = lang;
+            combo.dispatchEvent(new Event('change'));
+          } else {
+            location.reload();
+          }
+        });
       }
       function initTranslateMenu() {
         document.querySelectorAll('.translate-widget').forEach(widget => {
@@ -1599,10 +1876,23 @@ INFO_PAGE_TEMPLATE = """
         new google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false, layout: google.translate.TranslateElement.InlineLayout.HORIZONTAL }, 'google_translate_element');
         initTranslateMenu();
       }
+      function scheduleTranslateLibrary() {
+        // Only pay for Google Translate when the visitor actually uses it, or
+        // when a translation is already active for this browser.
+        if (hasActiveTranslation()) {
+          ensureTranslateLibrary();
+          return;
+        }
+        document.querySelectorAll('.translate-widget').forEach(widget => {
+          ['pointerenter', 'focusin', 'click'].forEach(type => {
+            widget.addEventListener(type, () => ensureTranslateLibrary(), { once: true, passive: true });
+          });
+        });
+      }
       document.addEventListener('DOMContentLoaded', initHeaderMenus);
       document.addEventListener('DOMContentLoaded', initTranslateMenu);
+      document.addEventListener('DOMContentLoaded', scheduleTranslateLibrary);
     </script>
-    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
   </body>
 </html>
 """
@@ -1722,9 +2012,20 @@ def render_contact_form(values=None, errors=None, success=False):
 
 
 def render_info_page(slug, extra_html=""):
-    page = INFO_PAGES.get(slug)
-    if not page:
+    if slug not in INFO_PAGES:
         return "Not found", 404
+    if extra_html:
+        # The contact page injects a form with a per-visitor token; never cache it.
+        return build_info_page_html(slug, extra_html)
+    return cached_or_build(
+        _INFO_PAGE_CACHE,
+        (site_base_url(), slug),
+        lambda: build_info_page_html(slug, ""),
+    )
+
+
+def build_info_page_html(slug, extra_html=""):
+    page = INFO_PAGES[slug]
     menu = build_menu_model()
     path = "/" + slug + "/"
     return render_template_string(
@@ -1743,11 +2044,10 @@ def render_info_page(slug, extra_html=""):
 
 
 def render_home_page():
-    cache_key = site_base_url()
-    cached = _HOME_PAGE_CACHE.get(cache_key)
-    if cached and page_cache_fresh(cached["ts"]):
-        return cached["html"]
+    return cached_or_build(_HOME_PAGE_CACHE, site_base_url(), build_home_page_html)
 
+
+def build_home_page_html():
     model = cached_home_model(include_series=False)
     menu = build_menu_model()
     description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY, and VND with live conversion tables and normalized exchange-rate charts."
@@ -1764,7 +2064,6 @@ def render_home_page():
         google_tag_html=GOOGLE_TAG_HTML,
         favicon_html=FAVICON_HTML,
     )
-    _HOME_PAGE_CACHE[cache_key] = {"ts": time.time(), "html": html}
     return html
 
 
@@ -1976,8 +2275,7 @@ def api_latest():
         if matches:
             latest = max(matches, key=lambda x: x.get("ts", 0))
             return jsonify({"ts": latest["ts"], "rate": latest["rate"], "base": base, "target": target})
-        data = load_json_rates()
-        derived = derive_latest_from_entries(data, base, target)
+        derived = derived_pair_latest(base, target)
         if derived:
             return jsonify(derived)
     except Exception:
@@ -2027,8 +2325,7 @@ def api_history():
         filtered_sorted = sorted(filtered, key=lambda x: x.get("ts", 0))
         data = [{"ts": e["ts"], "rate": e["rate"]} for e in filtered_sorted]
         if not data:
-            all_entries = load_json_rates()
-            data = derive_history_from_entries(all_entries, base, target, None if show_all else since)
+            data = derived_pair_history(base, target, None if show_all else since)
         return jsonify({"base": base, "target": target, "data": data})
     except Exception:
         pass
@@ -2063,8 +2360,7 @@ def api_convert():
             latest = max(matches, key=lambda x: x.get("ts", 0))
             rate = latest["rate"]
             return jsonify({"base": base, "target": target, "rate": rate, "amount": amount, "converted": amount * rate})
-        data = load_json_rates()
-        derived = derive_latest_from_entries(data, base, target)
+        derived = derived_pair_latest(base, target)
         if derived:
             rate = derived["rate"]
             return jsonify({"base": base, "target": target, "rate": rate, "amount": amount, "converted": amount * rate})
@@ -2902,7 +3198,7 @@ HOME_TEMPLATE = """
       }
       function chartLoadDelay(index){
         if(index === 0) return 0;
-        return 5000 + Math.floor(Math.random() * 5001);
+        return 150;
       }
       function waitForChartDelay(ms, token){
         return new Promise((resolve) => {
@@ -3049,20 +3345,39 @@ HOME_TEMPLATE = """
           document.cookie = `googtrans=${value || ''}; path=/; domain=.${location.hostname}${maxAge}`;
         }
       }
+      let translateLibraryPromise = null;
+      function ensureTranslateLibrary() {
+        if (window.google && window.google.translate) return Promise.resolve();
+        if (translateLibraryPromise) return translateLibraryPromise;
+        translateLibraryPromise = new Promise(resolve => {
+          const script = document.createElement('script');
+          script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = resolve;
+          document.head.appendChild(script);
+        });
+        return translateLibraryPromise;
+      }
+      function hasActiveTranslation() {
+        return /(^|; *)googtrans=[/][a-z-]+[/][a-z-]+/i.test(document.cookie);
+      }
       function applyTranslation(lang) {
-        const combo = document.querySelector('.goog-te-combo');
         if (lang === 'en') {
           setTranslateCookie('');
           location.reload();
           return;
         }
         setTranslateCookie(`/en/${lang}`);
-        if (combo) {
-          combo.value = lang;
-          combo.dispatchEvent(new Event('change'));
-        } else {
-          location.reload();
-        }
+        ensureTranslateLibrary().then(() => {
+          const combo = document.querySelector('.goog-te-combo');
+          if (combo) {
+            combo.value = lang;
+            combo.dispatchEvent(new Event('change'));
+          } else {
+            location.reload();
+          }
+        });
       }
       function initTranslateMenu() {
         document.querySelectorAll('.translate-widget').forEach(widget => {
@@ -3092,10 +3407,23 @@ HOME_TEMPLATE = """
         new google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false, layout: google.translate.TranslateElement.InlineLayout.HORIZONTAL }, 'google_translate_element');
         initTranslateMenu();
       }
+      function scheduleTranslateLibrary() {
+        // Only pay for Google Translate when the visitor actually uses it, or
+        // when a translation is already active for this browser.
+        if (hasActiveTranslation()) {
+          ensureTranslateLibrary();
+          return;
+        }
+        document.querySelectorAll('.translate-widget').forEach(widget => {
+          ['pointerenter', 'focusin', 'click'].forEach(type => {
+            widget.addEventListener(type, () => ensureTranslateLibrary(), { once: true, passive: true });
+          });
+        });
+      }
       document.addEventListener('DOMContentLoaded', initHeaderMenus);
       document.addEventListener('DOMContentLoaded', initTranslateMenu);
+      document.addEventListener('DOMContentLoaded', scheduleTranslateLibrary);
     </script>
-    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
   </body>
 </html>
 """
@@ -3121,7 +3449,6 @@ PAIR_PAGE_TEMPLATE = """
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="{{ title }}" />
     <meta name="twitter:description" content="{{ description }}" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="application/ld+json">{{ schema_json|safe }}</script>
     {{ google_tag_html|safe }}
     <style>
@@ -3484,8 +3811,8 @@ PAIR_PAGE_TEMPLATE = """
     {{ footer_html|safe }}
     <script>
       const historyData = {{ history_json|safe }};
-      const labels = historyData.map(point => new Date(point.ts * 1000).toLocaleString());
-      const values = historyData.map(point => point.rate);
+      const labels = historyData.map(point => new Date(point[0] * 1000).toLocaleString());
+      const values = historyData.map(point => point[1]);
       function formatRate(value){
         const n = Number(value);
         if(!Number.isFinite(n)) return value;
@@ -3572,6 +3899,21 @@ PAIR_PAGE_TEMPLATE = """
         gradient.addColorStop(1, 'rgba(37, 99, 235, 0.03)');
         return gradient;
       }
+      let chartLibraryPromise = null;
+      function ensureChartLibrary(){
+        if(typeof Chart !== 'undefined') return Promise.resolve();
+        if(chartLibraryPromise) return chartLibraryPromise;
+        chartLibraryPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Chart.js failed to load'));
+          document.head.appendChild(script);
+        });
+        return chartLibraryPromise;
+      }
+      function drawPairChart(){
       new Chart(document.getElementById('pair-chart').getContext('2d'), {
         type: 'line',
         plugins: [latestValueBadge],
@@ -3593,6 +3935,29 @@ PAIR_PAGE_TEMPLATE = """
           }
         }
       });
+      }
+      function startPairChart(){
+        ensureChartLibrary().then(drawPairChart).catch(() => {});
+      }
+      (function schedulePairChart(){
+        const canvas = document.getElementById('pair-chart');
+        if(!canvas) return;
+        if('IntersectionObserver' in window) {
+          const observer = new IntersectionObserver((entries) => {
+            if(entries.some(entry => entry.isIntersecting)) {
+              observer.disconnect();
+              startPairChart();
+            }
+          }, { rootMargin: '200px' });
+          observer.observe(canvas);
+          return;
+        }
+        if('requestIdleCallback' in window) {
+          window.requestIdleCallback(startPairChart, { timeout: 3000 });
+        } else {
+          window.setTimeout(startPairChart, 1200);
+        }
+      })();
     </script>
     <script>
       function closeHeaderMenus() {
@@ -3636,20 +4001,39 @@ PAIR_PAGE_TEMPLATE = """
           document.cookie = `googtrans=${value || ''}; path=/; domain=.${location.hostname}${maxAge}`;
         }
       }
+      let translateLibraryPromise = null;
+      function ensureTranslateLibrary() {
+        if (window.google && window.google.translate) return Promise.resolve();
+        if (translateLibraryPromise) return translateLibraryPromise;
+        translateLibraryPromise = new Promise(resolve => {
+          const script = document.createElement('script');
+          script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = resolve;
+          document.head.appendChild(script);
+        });
+        return translateLibraryPromise;
+      }
+      function hasActiveTranslation() {
+        return /(^|; *)googtrans=[/][a-z-]+[/][a-z-]+/i.test(document.cookie);
+      }
       function applyTranslation(lang) {
-        const combo = document.querySelector('.goog-te-combo');
         if (lang === 'en') {
           setTranslateCookie('');
           location.reload();
           return;
         }
         setTranslateCookie(`/en/${lang}`);
-        if (combo) {
-          combo.value = lang;
-          combo.dispatchEvent(new Event('change'));
-        } else {
-          location.reload();
-        }
+        ensureTranslateLibrary().then(() => {
+          const combo = document.querySelector('.goog-te-combo');
+          if (combo) {
+            combo.value = lang;
+            combo.dispatchEvent(new Event('change'));
+          } else {
+            location.reload();
+          }
+        });
       }
       function initTranslateMenu() {
         document.querySelectorAll('.translate-widget').forEach(widget => {
@@ -3679,10 +4063,23 @@ PAIR_PAGE_TEMPLATE = """
         new google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false, layout: google.translate.TranslateElement.InlineLayout.HORIZONTAL }, 'google_translate_element');
         initTranslateMenu();
       }
+      function scheduleTranslateLibrary() {
+        // Only pay for Google Translate when the visitor actually uses it, or
+        // when a translation is already active for this browser.
+        if (hasActiveTranslation()) {
+          ensureTranslateLibrary();
+          return;
+        }
+        document.querySelectorAll('.translate-widget').forEach(widget => {
+          ['pointerenter', 'focusin', 'click'].forEach(type => {
+            widget.addEventListener(type, () => ensureTranslateLibrary(), { once: true, passive: true });
+          });
+        });
+      }
       document.addEventListener('DOMContentLoaded', initHeaderMenus);
       document.addEventListener('DOMContentLoaded', initTranslateMenu);
+      document.addEventListener('DOMContentLoaded', scheduleTranslateLibrary);
     </script>
-    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
   </body>
 </html>
 """
@@ -3725,6 +4122,38 @@ def exchange_pair_page(pair):
     return render_cached_pair_page(base, target)
 
 
+def warm_caches():
+    """Build the expensive rate model up front and keep it warm.
+
+    Without this the first request after each cache window pays for the full
+    R2 read plus the derived-pair scan, which is what produced the blank-page
+    stall on entry.
+    """
+    try:
+        usd_timeline()
+        cached_home_model(include_series=False)
+    except Exception:
+        pass
+
+
+def _cache_warmer_loop():
+    interval = max(15, PAGE_CACHE_SECONDS)
+    while True:
+        warm_caches()
+        time.sleep(interval)
+
+
+def start_cache_warmer():
+    if not WARM_CACHE_ON_START:
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "false":
+        return
+    threading.Thread(target=_cache_warmer_loop, daemon=True).start()
+
+
+start_cache_warmer()
+
+
 if __name__ == "__main__":
     ensure_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

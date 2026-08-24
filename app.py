@@ -6,7 +6,8 @@ except ImportError:
 
 from modules.exchange_rates.app import app, ensure_db
 
+ensure_db()
+
 
 if __name__ == "__main__":
-    ensure_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
