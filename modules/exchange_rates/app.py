@@ -1038,6 +1038,7 @@ def render_pair_page(model):
     reverse_rate = model["reverse_rate"]
     content = build_pair_content(model, rate, reverse_rate)
     updated = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(latest["ts"]))) if latest else ""
+    updated_iso = utc_iso(int(latest["ts"])) if latest else ""
     title = f"{base} to {target} Exchange Rate Today"
     description = (
         f"{base} to {target} exchange rate today with converter, chart, statistics, trend notes, and practical {base}/{target} context."
@@ -1138,6 +1139,7 @@ def render_pair_page(model):
         footer_html=render_footer_html(menu),
         rate=None if rate is None else format_rate(rate),
         updated=updated,
+        updated_iso=updated_iso,
         rows=rows,
         reverse_rows=reverse_rows,
         pair_movers=build_pair_movers(base_filter=base),
@@ -1176,6 +1178,11 @@ MENU_GROUPS = {
     "CNY": ["USD", "VND", "JPY", "EUR", "KRW", "THB"],
     "VND": ["USD", "EUR", "JPY", "KRW", "THB", "CNY"],
 }
+
+
+def utc_iso(ts):
+    """The instant itself, always UTC. Display timezone is a browser concern."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts)))
 
 
 def build_latest_usd_table():
@@ -1303,6 +1310,7 @@ def build_home_model(quote="USD", include_series=True):
         "series": series,
         "chart_description": chart_description_for_quote(quote),
         "updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(latest_ts)) if latest_ts else "",
+        "updated_iso": utc_iso(latest_ts) if latest_ts else "",
     }
 
 
@@ -2791,7 +2799,7 @@ HOME_TEMPLATE = """
             <div>
               <div class="converter-title-row">
                 <h2>Currency converter</h2>
-                <span class="converter-updated">Updated {{ model.updated or 'when data is available' }}</span>
+                <span class="converter-updated">Updated {% if model.updated %}<time class="localtime" datetime="{{ model.updated_iso }}">{{ model.updated }}</time>{% else %}when data is available{% endif %}</span>
               </div>
               <p class="muted">Convert a major currency into popular currencies using the latest stored rates.</p>
             </div>
@@ -2823,7 +2831,7 @@ HOME_TEMPLATE = """
       <div class="topbar">
         <header>
           <h1>Exchange Rates Dashboard</h1>
-          <p class="muted">Compare popular currencies across major quote currencies and VND. Updated {{ model.updated or 'when data is available' }}.</p>
+          <p class="muted">Compare popular currencies across major quote currencies and VND. Updated {% if model.updated %}<time class="localtime" datetime="{{ model.updated_iso }}">{{ model.updated }}</time>{% else %}when data is available{% endif %}.</p>
         </header>
         <nav class="actions">
           <a href="/chart">Pair chart tool</a>
@@ -2897,7 +2905,7 @@ HOME_TEMPLATE = """
           <div>
             <div class="converter-title-row">
               <h2>Currency converter</h2>
-              <span class="converter-updated">Updated {{ model.updated or 'when data is available' }}</span>
+              <span class="converter-updated">Updated {% if model.updated %}<time class="localtime" datetime="{{ model.updated_iso }}">{{ model.updated }}</time>{% else %}when data is available{% endif %}</span>
             </div>
             <p class="muted">Convert a major currency into popular currencies using the latest stored rates.</p>
           </div>
@@ -3124,14 +3132,34 @@ HOME_TEMPLATE = """
         }).join('');
         document.getElementById('converter-results').innerHTML = html;
       }
-      // Every timestamp renders in UTC so the chart agrees with the
-      // server-rendered "Updated" stamp for visitors in any timezone.
-      function formatUtcTick(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+      // Instants travel as UTC and are rendered in the visitor's own zone.
+      // The server-rendered text stays UTC, so cached HTML is byte-identical
+      // for every visitor and still reads correctly without JavaScript.
+      function localZoneLabel(){
+        try {
+          const parts = new Intl.DateTimeFormat('en-GB', { timeZoneName: 'shortOffset' }).formatToParts(new Date());
+          const zone = parts.find(part => part.type === 'timeZoneName');
+          if (zone) return zone.value;
+        } catch (err) { /* older browsers fall through to the manual offset */ }
+        const offset = -new Date().getTimezoneOffset();
+        const minutes = Math.abs(offset) % 60;
+        return 'GMT' + (offset < 0 ? '-' : '+') + Math.floor(Math.abs(offset) / 60) + (minutes ? ':' + String(minutes).padStart(2, '0') : '');
       }
-      function formatUtcFull(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+      function formatStampTick(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
       }
+      function formatStampFull(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' (' + localZoneLabel() + ')';
+      }
+      function initLocalTimes(){
+        document.querySelectorAll('time.localtime[datetime]').forEach(node => {
+          const ms = Date.parse(node.getAttribute('datetime'));
+          if (!Number.isFinite(ms)) return;
+          node.title = node.textContent.trim();   // keep the UTC value on hover
+          node.textContent = formatStampFull(ms / 1000);
+        });
+      }
+      document.addEventListener('DOMContentLoaded', initLocalTimes);
       let homeChartTimestamps = [];
       function buildHomeChartData(nextSeries) {
         // A pair can have a shorter history than the others (for example after
@@ -3157,7 +3185,7 @@ HOME_TEMPLATE = """
         }).filter(item => item.data.length);
         const allTimestamps = Array.from(new Set(comparableSeries.flatMap(item => item.data.map(point => point.ts)))).sort((a, b) => a - b);
         homeChartTimestamps = allTimestamps;
-        const labels = allTimestamps.map(formatUtcTick);
+        const labels = allTimestamps.map(formatStampTick);
         const datasets = comparableSeries.map((item, index) => {
           const byTs = new Map(item.data.map(point => [point.ts, point.value]));
           const color = palette[index % palette.length];
@@ -3194,13 +3222,13 @@ HOME_TEMPLATE = """
           },
           tooltip: {
             callbacks: {
-              title: items => (items.length ? formatUtcFull(homeChartTimestamps[items[0].dataIndex]) : ''),
+              title: items => (items.length ? formatStampFull(homeChartTimestamps[items[0].dataIndex]) : ''),
               label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(2)}`
             }
           }
         },
         scales: {
-          x: { grid: { display: false }, border: { display: false }, title: { display: true, text: 'UTC', color: '#667085', font: { size: 11 } }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
+          x: { grid: { display: false }, border: { display: false }, title: { display: true, text: localZoneLabel(), color: '#667085', font: { size: 11 } }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
           y: { position: 'right', grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 5, padding: 8, color: '#667085', callback: value => Number(value).toFixed(0) } }
         }
       };
@@ -3663,7 +3691,7 @@ PAIR_PAGE_TEMPLATE = """
         <h1>{{ base }} to {{ target }} Exchange Rate</h1>
         {% if rate %}
           <p class="lede">1 {{ base }} = <strong>{{ rate }} {{ target }}</strong></p>
-          <p class="muted">Updated {{ updated }}. Mid-market rate for informational use only.</p>
+          <p class="muted">Updated <time class="localtime" datetime="{{ updated_iso }}">{{ updated }}</time>. Mid-market rate for informational use only.</p>
         {% else %}
           <p class="lede">Exchange rate data is not available yet.</p>
         {% endif %}
@@ -3682,7 +3710,7 @@ PAIR_PAGE_TEMPLATE = """
         <div class="converter-title-row">
           <h2>{{ base }} to {{ target }} converter</h2>
           {% if updated %}
-            <span class="converter-updated">Updated {{ updated }}</span>
+            <span class="converter-updated">Updated <time class="localtime" datetime="{{ updated_iso }}">{{ updated }}</time></span>
           {% endif %}
         </div>
         <div class="converter-table-wrap">
@@ -3822,16 +3850,36 @@ PAIR_PAGE_TEMPLATE = """
     {{ footer_html|safe }}
     <script>
       const historyData = {{ history_json|safe }};
-      // Every timestamp renders in UTC so the chart agrees with the
-      // server-rendered "Updated" stamp for visitors in any timezone.
-      function formatUtcTick(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+      // Instants travel as UTC and are rendered in the visitor's own zone.
+      // The server-rendered text stays UTC, so cached HTML is byte-identical
+      // for every visitor and still reads correctly without JavaScript.
+      function localZoneLabel(){
+        try {
+          const parts = new Intl.DateTimeFormat('en-GB', { timeZoneName: 'shortOffset' }).formatToParts(new Date());
+          const zone = parts.find(part => part.type === 'timeZoneName');
+          if (zone) return zone.value;
+        } catch (err) { /* older browsers fall through to the manual offset */ }
+        const offset = -new Date().getTimezoneOffset();
+        const minutes = Math.abs(offset) % 60;
+        return 'GMT' + (offset < 0 ? '-' : '+') + Math.floor(Math.abs(offset) / 60) + (minutes ? ':' + String(minutes).padStart(2, '0') : '');
       }
-      function formatUtcFull(ts){
-        return new Date(ts * 1000).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' UTC';
+      function formatStampTick(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
       }
+      function formatStampFull(ts){
+        return new Date(ts * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' (' + localZoneLabel() + ')';
+      }
+      function initLocalTimes(){
+        document.querySelectorAll('time.localtime[datetime]').forEach(node => {
+          const ms = Date.parse(node.getAttribute('datetime'));
+          if (!Number.isFinite(ms)) return;
+          node.title = node.textContent.trim();   // keep the UTC value on hover
+          node.textContent = formatStampFull(ms / 1000);
+        });
+      }
+      document.addEventListener('DOMContentLoaded', initLocalTimes);
       const timestamps = historyData.map(point => point[0]);
-      const labels = timestamps.map(formatUtcTick);
+      const labels = timestamps.map(formatStampTick);
       const values = historyData.map(point => point[1]);
       function formatRate(value){
         const n = Number(value);
@@ -3948,12 +3996,12 @@ PAIR_PAGE_TEMPLATE = """
           plugins: {
             legend: { display: false },
             tooltip: { callbacks: {
-              title: items => (items.length ? formatUtcFull(timestamps[items[0].dataIndex]) : ''),
+              title: items => (items.length ? formatStampFull(timestamps[items[0].dataIndex]) : ''),
               label: context => `${context.dataset.label}: ${formatRate(context.parsed.y)}`
             } }
           },
           scales: {
-            x: { grid: { display: false }, border: { display: false }, title: { display: true, text: 'UTC', color: '#667085', font: { size: 11 } }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
+            x: { grid: { display: false }, border: { display: false }, title: { display: true, text: localZoneLabel(), color: '#667085', font: { size: 11 } }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#667085' } },
             y: { position: 'right', beginAtZero: false, grid: { color: 'rgba(148, 163, 184, 0.16)', drawTicks: false }, border: { display: false }, ticks: { maxTicksLimit: 4, padding: 8, color: '#667085', callback: value => formatRate(value) } }
           }
         }
