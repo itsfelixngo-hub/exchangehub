@@ -70,7 +70,10 @@ jobs:
           set -euo pipefail
 
           cd "$APP_DIR"
-          git -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" \
+          test -n "$GITHUB_TOKEN"
+          test -n "$GITHUB_REPOSITORY"
+          GIT_AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.extraheader="AUTHORIZATION: basic $GIT_AUTH" \
             fetch --force "https://github.com/${GITHUB_REPOSITORY}.git" \
             main:refs/remotes/origin/main
           git reset --hard origin/main
