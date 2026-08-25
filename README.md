@@ -444,8 +444,17 @@ the origin. `deploy/nginx-exchangehub.conf` is the reference server block for
 that setup. It is **not** deployed automatically -- `deploy_blue_green.sh`
 only rewrites `exchangehub-upstream.conf` -- so copy it to the server by hand.
 
-1. Cloudflare dashboard -> SSL/TLS -> Origin Server -> **Create Certificate**.
-   Save the certificate and private key on the origin:
+This VPS hosts two sites. `alogweb` (`/etc/nginx/sites-enabled/alogweb`,
+proxying to `127.0.0.1:8093`) was configured first and holds 80/443; this is
+the second. They share both ports and are separated by SNI / `server_name`,
+so each needs its own certificate. Because `alogweb` sorts before
+`exchangehub.conf`, its blocks load first and are the implicit default
+server: any request whose SNI matches neither site lands on alogweb.
+
+1. Cloudflare dashboard -> SSL/TLS -> Origin Server -> **Create Certificate**,
+   for this zone specifically. The certificate already in
+   `/etc/ssl/cloudflare/` belongs to alogweb and covers only `alogweb.com`
+   and `*.alogweb.com`, so it cannot be reused here. Save the new pair:
 
 ```bash
 sudo install -d -m 0755 /etc/ssl/cloudflare
@@ -495,6 +504,15 @@ Notes
 - The HTTPS block is purely additive: the existing `:80` block is untouched,
   so installing it cannot take the site off the air. Both blocks proxy to the
   same upstream with the same headers.
+- Until the `:443` block exists, TLS to the origin with SNI `ratehubfx.com`
+  falls through to alogweb. Switching Cloudflare to "Full" before installing
+  it would serve alogweb's content under ratehubfx.com; "Full (strict)" would
+  fail with a 526. Install the block first, change the mode second.
+- `http2` is a property of the listen socket rather than of a server block,
+  so the value here must match what alogweb declares for the same port.
+- `ssl_session_cache` uses a zone name of its own (`shared:ratehubfx:10m`);
+  two vhosts declaring the same zone name with different sizes is a fatal
+  error at `nginx -t`.
 - Cloudflare does not cache HTML by default; the `Cache-Control` headers the
   app sets are ignored at the edge until a Cache Rule marks the site eligible
   for caching, so today every request still reaches the origin.
