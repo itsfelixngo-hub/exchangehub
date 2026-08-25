@@ -5,3 +5,4 @@ rates.db
 wp-content/uploads/
 docker-data/
 dist/
+.deploy-state/

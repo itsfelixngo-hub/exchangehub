@@ -433,6 +433,59 @@ OPENEXCHANGE_APP_IDS=APP_ID_1,APP_ID_2,APP_ID_3 docker-compose up --build -d
 
 4. To map uploads to your WordPress installation for local-file mode, edit `docker-compose.yml` volumes to mount the correct host path to `/app/wp-content/uploads`. This is not required for R2-only mode.
 
+TLS with Cloudflare
+
+DNS for `ratehubfx.com` and `www` is proxied through Cloudflare (orange
+cloud), so visitors terminate TLS at the edge and Cloudflare re-connects to
+the origin. `deploy/nginx-exchangehub.conf` is the reference server block for
+that setup. It is **not** deployed automatically -- `deploy_blue_green.sh`
+only rewrites `exchangehub-upstream.conf` -- so copy it to the server by hand.
+
+1. Cloudflare dashboard -> SSL/TLS -> Origin Server -> **Create Certificate**.
+   Save the certificate and private key on the origin:
+
+```bash
+sudo install -d -m 0755 /etc/ssl/cloudflare
+sudo install -m 0644 origin.pem /etc/ssl/cloudflare/ratehubfx.com.pem
+sudo install -m 0600 origin.key /etc/ssl/cloudflare/ratehubfx.com.key
+sudo curl -fsSLo /etc/ssl/cloudflare/origin-pull-ca.pem \
+  https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem
+```
+
+2. Set Cloudflare SSL/TLS mode to **Full (strict)** *before* installing the
+   config. On "Flexible" Cloudflare talks to the origin over plain HTTP and
+   the `:80 -> :443` redirect would loop forever.
+
+3. Turn on **Authenticated Origin Pulls** (SSL/TLS -> Origin Server). The
+   config sets `ssl_verify_client on`, so without it every request is
+   rejected with a 400.
+
+4. Teach nginx which addresses are Cloudflare, so logs and `X-Real-IP` show
+   the visitor rather than an edge node:
+
+```bash
+sudo bash deploy/cloudflare-realip.sh
+```
+
+5. Install and reload:
+
+```bash
+sudo cp deploy/nginx-exchangehub.conf /etc/nginx/sites-available/ratehubfx.com
+sudo nginx -t && sudo nginx -s reload
+```
+
+Notes
+
+- `listen 443 ssl http2;` works on every nginx since 1.9.5. On 1.25.1 and
+  later it logs a deprecation notice; there, use `listen 443 ssl;` plus a
+  separate `http2 on;`.
+- `mail.ratehubfx.com` is deliberately **not** proxied through Cloudflare and
+  does not go through nginx, so none of this affects mail.
+- Cloudflare does not cache HTML by default; the `Cache-Control` headers the
+  app sets are ignored at the edge until a Cache Rule marks the site eligible
+  for caching. Until then the `proxy_cache` block in this config is the only
+  shared cache in front of the app.
+
 WP plugin (module) usage
 
 - A simple plugin module is included at `wp-plugin-exchange/exchange-plugin.php`. To use it in your WordPress site, copy the `wp-plugin-exchange` folder into `wp-content/plugins/` and activate the plugin.
