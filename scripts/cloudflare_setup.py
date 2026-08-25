@@ -17,8 +17,13 @@ Nothing is changed without --apply; the default run only reports.
     python3 scripts/cloudflare_setup.py                 # report current state
     python3 scripts/cloudflare_setup.py --cache-rule --apply
     python3 scripts/cloudflare_setup.py --origin-pulls --apply
+
+With no CF_API_TOKEN in the environment or .env, the token is prompted for
+without echoing. Prefer that to putting it on the command line, where it is
+kept in shell history and shows up in any screenshot of the terminal.
 """
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -200,6 +205,12 @@ def main():
     load_dotenv(dotenv)
     token = env("CF_API_TOKEN")
     zone_name = env("CF_ZONE_NAME")
+
+    # Prompt rather than make people put a token on the command line, where it
+    # lands in shell history and in any screenshot of the terminal.
+    if not token and sys.stdin.isatty():
+        token = getpass.getpass("Cloudflare API token (not echoed): ").strip()
+
     missing = [n for n, v in (("CF_API_TOKEN", token), ("CF_ZONE_NAME", zone_name)) if not v]
     if missing:
         where = f"{dotenv} (exists)" if dotenv.exists() else f"{dotenv} (not found)"
