@@ -152,11 +152,26 @@ def main():
     parser.add_argument("--apply", action="store_true", help="actually change things (default is a dry run)")
     args = parser.parse_args()
 
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    dotenv = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(dotenv)
     token = env("CF_API_TOKEN")
     zone_name = env("CF_ZONE_NAME")
-    if not token or not zone_name:
-        sys.exit("CF_API_TOKEN and CF_ZONE_NAME must be set (see .env.sample)")
+    missing = [n for n, v in (("CF_API_TOKEN", token), ("CF_ZONE_NAME", zone_name)) if not v]
+    if missing:
+        where = f"{dotenv} (exists)" if dotenv.exists() else f"{dotenv} (not found)"
+        sys.exit(
+            f"missing: {', '.join(missing)}\n"
+            f"  looked in the environment, then {where}\n"
+            "\n"
+            "  The production .env is written from the PROD_ENV secret, which\n"
+            "  need not carry the Cloudflare keys. Either run this from a\n"
+            "  checkout whose .env has them, or pass them inline:\n"
+            "\n"
+            f"    CF_API_TOKEN=... CF_ZONE_NAME=... python3 {Path(__file__).name}\n"
+            "\n"
+            "  Token scopes, all on this zone: Zone-Zone-Read,\n"
+            "  Zone-Cache Rules-Edit, Zone-SSL and Certificates-Edit."
+        )
 
     zone = zone_id_for(zone_name, token)
     print(f"zone {zone_name} ({zone})\n")
