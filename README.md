@@ -467,15 +467,22 @@ sudo curl -fsSLo /etc/ssl/cloudflare/origin-pull-ca.pem \
 sudo bash deploy/cloudflare-realip.sh
 ```
 
-5. Install and reload:
+5. Install and reload. Nothing in the deploy pipeline writes this file, so
+   pushing to main will never update it -- it has to be copied by hand, once,
+   and again whenever this repo's copy changes:
 
 ```bash
-sudo cp deploy/nginx-exchangehub.conf /etc/nginx/sites-available/ratehubfx.com
-sudo nginx -t && sudo nginx -s reload
+sudo cp /etc/nginx/sites-enabled/exchangehub.conf /root/exchangehub.conf.bak
+sudo cp deploy/nginx-exchangehub.conf /etc/nginx/sites-enabled/exchangehub.conf
+sudo nginx -t && sudo nginx -s reload      # restore the .bak if -t fails
 ```
 
 Notes
 
+- The upstream include at the top of the file stays commented out. Ubuntu's
+  `nginx.conf` already globs `/etc/nginx/conf.d/*.conf`, so the upstream that
+  `deploy_blue_green.sh` writes is loaded anyway; including it a second time
+  is a fatal `duplicate upstream "exchangehub_backend"` at `nginx -t`.
 - `listen 443 ssl http2;` works on every nginx since 1.9.5. On 1.25.1 and
   later it logs a deprecation notice; there, use `listen 443 ssl;` plus a
   separate `http2 on;`.
