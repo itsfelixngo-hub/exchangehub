@@ -60,8 +60,43 @@ def cf_request(method, path, token, allow_missing=False, **kwargs):
         errors = payload.get("errors") or []
         if allow_missing and response.status_code == 404:
             return None
-        raise RuntimeError(f"Cloudflare API error ({response.status_code}): {errors}")
+        raise CloudflareError(response.status_code, errors)
     return payload.get("result")
+
+
+class CloudflareError(RuntimeError):
+    """An API refusal, rendered as advice rather than a traceback."""
+
+    # Cloudflare's codes are terse and the useful part is what to do next.
+    HINTS = {
+        9109: (
+            "The token is restricted by IP and this machine is not on its list.\n"
+            "  Either run this from an address the token allows (the VPS, most\n"
+            "  likely, passing the values inline), or edit the token's\n"
+            "  \"IP Address Filtering\" in the Cloudflare dashboard."
+        ),
+        10000: (
+            "Authentication failed, or the token lacks the permission this call\n"
+            "  needs. Check the token is current and carries, on this zone:\n"
+            "  Zone-Zone-Read, Zone-Cache Rules-Edit, Zone-SSL and Certificates-Edit."
+        ),
+        7003: "The zone was not found. Check CF_ZONE_NAME.",
+    }
+
+    def __init__(self, status, errors):
+        self.status = status
+        self.errors = errors
+        super().__init__(self.render())
+
+    def render(self):
+        lines = [f"Cloudflare refused the request (HTTP {self.status})."]
+        for err in self.errors:
+            code = err.get("code")
+            lines.append(f"  [{code}] {err.get('message')}")
+            hint = self.HINTS.get(code)
+            if hint:
+                lines.append(f"  {hint}")
+        return "\n".join(lines)
 
 
 def zone_id_for(name, token):
@@ -189,4 +224,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except CloudflareError as exc:
+        sys.exit(str(exc))
+    except requests.RequestException as exc:
+        sys.exit(f"Could not reach the Cloudflare API: {exc}")
