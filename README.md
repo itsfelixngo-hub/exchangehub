@@ -452,9 +452,10 @@ sudo curl -fsSLo /etc/ssl/cloudflare/origin-pull-ca.pem \
   https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem
 ```
 
-2. Set Cloudflare SSL/TLS mode to **Full (strict)** *before* installing the
-   config. On "Flexible" Cloudflare talks to the origin over plain HTTP and
-   the `:80 -> :443` redirect would loop forever.
+2. Set Cloudflare SSL/TLS mode to **Full (strict)**. The `:80` block is left
+   serving normally rather than redirecting, so a wrong mode here degrades
+   instead of taking the site down; switch `:80` to a redirect only once
+   Full (strict) is confirmed, since "Flexible" would loop it forever.
 
 3. Turn on **Authenticated Origin Pulls** (SSL/TLS -> Origin Server). The
    config sets `ssl_verify_client on`, so without it every request is
@@ -488,10 +489,16 @@ Notes
   separate `http2 on;`.
 - `mail.ratehubfx.com` is deliberately **not** proxied through Cloudflare and
   does not go through nginx, so none of this affects mail.
+- The HTTPS block is purely additive: the existing `:80` block is untouched,
+  so installing it cannot take the site off the air. Both blocks proxy to the
+  same upstream with the same headers.
 - Cloudflare does not cache HTML by default; the `Cache-Control` headers the
   app sets are ignored at the edge until a Cache Rule marks the site eligible
-  for caching. Until then the `proxy_cache` block in this config is the only
-  shared cache in front of the app.
+  for caching, so today every request still reaches the origin.
+- To create the Origin Certificate through the API instead of the dashboard,
+  an API token needs **Zone - SSL and Certificates - Edit** on the zone (the
+  SSL counterpart to the `Zone:DNS:Edit` the DNS import script uses). Origin
+  CA Keys still work but Cloudflare removes them on 2026-09-30.
 
 WP plugin (module) usage
 
