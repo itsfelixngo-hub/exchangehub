@@ -531,6 +531,67 @@ Notes
   SSL counterpart to the `Zone:DNS:Edit` the DNS import script uses). Origin
   CA Keys still work but Cloudflare removes them on 2026-09-30.
 
+Monitoring, security and edge caching
+
+What already exists, and is mostly just unused:
+
+- **Google Analytics** is embedded and reports 15 custom events, including
+  Web Vitals (`web_vital_lcp`, `web_vital_cls`, `web_vital_inp`), `js_error`,
+  `api_request_error` and `contact_submit_success`. Real-user performance data
+  is already being collected; look under Reports -> Engagement -> Events.
+- **Cloudflare Analytics** covers traffic, bandwidth, cache hit ratio and
+  Security Events for free, since the zone is already proxied.
+
+What the config adds:
+
+- `log_format ratehubfx` keeps nginx's `combined` prefix and appends
+  `host=`, `rt=` (what the visitor waited) and `urt=` (what the app took).
+  The gap between the two is nginx plus network.
+- `deploy/goaccess-report.sh` renders that log as an HTML report. It carries
+  the matching goaccess `--log-format`, so it needs no arguments:
+
+```bash
+sudo apt-get install -y goaccess
+sudo bash deploy/goaccess-report.sh            # one-off HTML report
+sudo bash deploy/goaccess-report.sh --live     # keeps updating
+```
+
+  The report lists visitor addresses and every URL requested. Keep it behind a
+  password, or read it locally over `scp`; do not serve it from a public vhost.
+
+- Security headers on every response, errors included: HSTS,
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and
+  `Permissions-Policy`. **No CSP** -- the app inlines its scripts and styles
+  and loads gtag, jsdelivr and Google Translate, so a policy that is both
+  useful and non-breaking has to be worked out rather than guessed at.
+- Rate limits on the two paths worth protecting: `/contact` at 10 r/m
+  (it sends mail) and `/api/` at 300 r/m with a burst, since one page load
+  fires five or six API calls. Both return 429 when tripped.
+
+**Run `deploy/cloudflare-realip.sh` before relying on either.** Rate limits
+key on the client address, and until nginx knows Cloudflare's ranges every
+visitor shares a handful of edge addresses -- they would throttle each other,
+and the logs would show Cloudflare rather than the visitor.
+
+Cloudflare-side settings are applied by `scripts/cloudflare_setup.py`, which
+reports by default and changes nothing without `--apply`:
+
+```bash
+python3 scripts/cloudflare_setup.py                        # report
+python3 scripts/cloudflare_setup.py --cache-rule --apply   # edge-cache HTML
+python3 scripts/cloudflare_setup.py --origin-pulls --apply
+```
+
+The cache rule matters most. Cloudflare does not cache HTML by default, so the
+`Cache-Control` the app sends is ignored at the edge and every request still
+reaches the origin; `cf-cache-status` reads `DYNAMIC`. The rule marks the zone
+cacheable with `edge_ttl: respect_origin` -- the TTL stays defined in one
+place, the app -- and excludes `/contact`, which carries a per-visitor token
+and is served `no-store`.
+
+Brotli is deliberately not configured at the origin: Cloudflare compresses to
+the visitor itself, so it would only affect the Cloudflare-to-origin hop.
+
 WP plugin (module) usage
 
 - A simple plugin module is included at `wp-plugin-exchange/exchange-plugin.php`. To use it in your WordPress site, copy the `wp-plugin-exchange` folder into `wp-content/plugins/` and activate the plugin.
