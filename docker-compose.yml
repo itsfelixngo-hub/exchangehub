@@ -43,7 +43,7 @@ services:
     container_name: exchangehub-web
     image: exchangehub-web:latest
     build: .
-    command: gunicorn --bind 0.0.0.0:5000 --workers ${WEB_WORKERS:-2} --worker-class gthread --threads ${WEB_THREADS:-8} --timeout 60 --graceful-timeout 30 --keep-alive 15 --access-logfile - app:app
+    command: gunicorn --bind 0.0.0.0:5000 --workers ${GUNICORN_WORKERS:-2} --worker-class gthread --threads ${GUNICORN_THREADS:-8} --timeout 60 --graceful-timeout 30 --keep-alive 15 --access-logfile - app:app
     ports:
       - "5000:5000"
     volumes:

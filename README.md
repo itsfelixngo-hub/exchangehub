@@ -65,7 +65,10 @@ Pages are rendered server-side and served from an in-process cache, so a request
 normally costs no rate-data work at all.
 
 - A background warmer thread builds the rate model at startup and refreshes it
-  every `PAGE_CACHE_SECONDS`, so no visitor ever pays for a cold render.
+  every `PAGE_CACHE_SECONDS`, so no visitor ever pays for a cold render. The
+  blue/green deploy also warms a new container before nginx points at it --
+  `/healthz` answers without touching the rate model, so passing the health
+  check is not proof the container is ready to serve a page quickly.
 - When a cached page does expire, the stale copy is served immediately and the
   rebuild happens on a background thread (`PAGE_STALE_SECONDS` bounds how stale).
 - Derived cross pairs (for example `EUR/JPY`) come from a single USD timeline
@@ -87,7 +90,7 @@ Tuning environment variables:
 | `CHART_MAX_POINTS` | `400` | Points kept per chart series |
 | `GZIP_LEVEL` / `GZIP_MIN_BYTES` | `6` / `1024` | Response compression |
 | `STATIC_MAX_AGE` | `86400` | `Cache-Control` max-age for `/static` |
-| `WEB_WORKERS` / `WEB_THREADS` | `2` / `8` | gunicorn sizing (docker-compose) |
+| `GUNICORN_WORKERS` / `GUNICORN_THREADS` | `2` / `8` | gunicorn sizing (compose and blue/green deploy) |
 
 Notes
 

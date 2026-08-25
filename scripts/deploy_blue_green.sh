@@ -11,6 +11,7 @@ GREEN_PORT="${GREEN_PORT:-5002}"
 ACTIVE_FILE="${ACTIVE_FILE:-.deploy-active-color}"
 NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/${APP_NAME}-upstream.conf}"
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-}"
+GUNICORN_THREADS="${GUNICORN_THREADS:-}"
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
@@ -40,7 +41,11 @@ fi
 if [[ -z "$GUNICORN_WORKERS" ]] && grep -q '^GUNICORN_WORKERS=' .env; then
   GUNICORN_WORKERS="$(grep '^GUNICORN_WORKERS=' .env | tail -n1 | cut -d= -f2-)"
 fi
+if [[ -z "$GUNICORN_THREADS" ]] && grep -q '^GUNICORN_THREADS=' .env; then
+  GUNICORN_THREADS="$(grep '^GUNICORN_THREADS=' .env | tail -n1 | cut -d= -f2-)"
+fi
 GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
+GUNICORN_THREADS="${GUNICORN_THREADS:-8}"
 
 env_value() {
   local key="$1"
@@ -223,7 +228,16 @@ docker run -d \
   -e CONTACT_SMTP_PORT="$CONTACT_SMTP_PORT_VALUE" \
   -p "127.0.0.1:${new_port}:5000" \
   "$image" \
-  gunicorn -w "$GUNICORN_WORKERS" -b 0.0.0.0:5000 app:app
+  gunicorn \
+    --bind 0.0.0.0:5000 \
+    --workers "$GUNICORN_WORKERS" \
+    --worker-class gthread \
+    --threads "$GUNICORN_THREADS" \
+    --timeout 60 \
+    --graceful-timeout 30 \
+    --keep-alive 15 \
+    --access-logfile - \
+    app:app
 
 for attempt in $(seq 1 "$HEALTH_RETRIES"); do
   if curl -fsS "http://127.0.0.1:${new_port}${HEALTH_PATH}" >/dev/null; then
@@ -236,6 +250,22 @@ for attempt in $(seq 1 "$HEALTH_RETRIES"); do
   fi
   sleep "$HEALTH_SLEEP"
 done
+
+# Each gunicorn worker keeps its own page cache, so warm more than once to
+# give every worker a turn. /healthz never touches the rate model, so without
+# this the first real visitor after a deploy pays the full cold render.
+echo "Warming $new_container before switching traffic..."
+warmed=0
+for _ in $(seq 1 "${WARM_REQUESTS:-4}"); do
+  if curl -fsS --max-time "${WARM_TIMEOUT:-60}" "http://127.0.0.1:${new_port}/" >/dev/null 2>&1; then
+    warmed=$((warmed + 1))
+  fi
+done
+if [[ "$warmed" -gt 0 ]]; then
+  echo "Warm-up completed ($warmed requests)."
+else
+  echo "Warm-up did not complete; continuing anyway." >&2
+fi
 
 upstream_conf="upstream ${APP_NAME}_backend {
     server 127.0.0.1:${new_port};
