@@ -211,13 +211,37 @@ def main():
     zone = zone_id_for(zone_name, token)
     print(f"zone {zone_name} ({zone})\n")
 
+    # One missing scope should cost you that section, not the whole run --
+    # otherwise you discover the scopes one round trip at a time.
+    blocked = []
+
     print("cache rules")
-    _, rules = show_cache_rules(zone, token)
-    if args.cache_rule:
-        apply_cache_rule(zone, zone_name, token, rules, args.apply)
+    try:
+        _, rules = show_cache_rules(zone, token)
+        if args.cache_rule:
+            apply_cache_rule(zone, zone_name, token, rules, args.apply)
+    except CloudflareError as exc:
+        print(f"  {str(exc).splitlines()[0]}")
+        for line in str(exc).splitlines()[1:]:
+            print(f"  {line}")
+        blocked.append("Zone - Cache Rules - Edit")
 
     print("\norigin pulls")
-    origin_pulls(zone, token, args.apply and args.origin_pulls)
+    try:
+        origin_pulls(zone, token, args.apply and args.origin_pulls)
+    except CloudflareError as exc:
+        for line in str(exc).splitlines():
+            print(f"  {line}")
+        blocked.append("Zone - SSL and Certificates - Edit")
+
+    if blocked:
+        print("\nAdd these to the token, then re-run:")
+        for scope in blocked:
+            print(f"  - {scope}")
+        print("\n  Cloudflare dashboard -> My Profile -> API Tokens -> edit the")
+        print(f"  token -> Permissions. Keep the zone resource on {zone_name} and")
+        print("  leave IP Address Filtering as it is.")
+        sys.exit(1)
 
     if not (args.cache_rule or args.origin_pulls):
         print("\nreport only. Pass --cache-rule and/or --origin-pulls to change things.")
