@@ -469,9 +469,10 @@ sudo curl -fsSLo /etc/ssl/cloudflare/origin-pull-ca.pem \
    instead of taking the site down; switch `:80` to a redirect only once
    Full (strict) is confirmed, since "Flexible" would loop it forever.
 
-3. Turn on **Authenticated Origin Pulls** (SSL/TLS -> Origin Server). The
-   config sets `ssl_verify_client on`, so without it every request is
-   rejected with a 400.
+3. Optional, and off by default to match the alogweb vhost: **Authenticated
+   Origin Pulls**. Turn it on in the dashboard (SSL/TLS -> Origin Server)
+   *first*, then uncomment `ssl_client_certificate` and `ssl_verify_client`.
+   Uncommenting them before the dashboard toggle answers every request 400.
 
 4. Teach nginx which addresses are Cloudflare, so logs and `X-Real-IP` show
    the visitor rather than an edge node:
@@ -513,6 +514,15 @@ Notes
 - `ssl_session_cache` uses a zone name of its own (`shared:ratehubfx:10m`);
   two vhosts declaring the same zone name with different sizes is a fatal
   error at `nginx -t`.
+- The alogweb vhost needs no edits for these two to coexist. Only two things
+  actually collide between vhosts, and neither is present: a second
+  `default_server` on a port ("a duplicate default server for 0.0.0.0:443"),
+  and a reused `ssl_session_cache` zone name at a different size. A differing
+  `http2` flag on a shared listen socket is tolerated.
+- Removing `/etc/nginx/sites-enabled/default` is safe. It holds the
+  `default_server` for port 80; with it gone the first vhost loaded takes
+  that role, and `alogweb` sorts before `exchangehub.conf`, so unmatched
+  Host and SNI both land on alogweb exactly as they do today.
 - Cloudflare does not cache HTML by default; the `Cache-Control` headers the
   app sets are ignored at the edge until a Cache Rule marks the site eligible
   for caching, so today every request still reaches the origin.
