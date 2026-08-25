@@ -436,119 +436,56 @@ OPENEXCHANGE_APP_IDS=APP_ID_1,APP_ID_2,APP_ID_3 docker-compose up --build -d
 
 4. To map uploads to your WordPress installation for local-file mode, edit `docker-compose.yml` volumes to mount the correct host path to `/app/wp-content/uploads`. This is not required for R2-only mode.
 
-TLS with Cloudflare
+Cloudflare
 
-DNS for `ratehubfx.com` and `www` is proxied through Cloudflare (orange
-cloud), so visitors terminate TLS at the edge and Cloudflare re-connects to
-the origin. `deploy/nginx-exchangehub.conf` is the reference server block for
-that setup. It is **not** deployed automatically -- `deploy_blue_green.sh`
-only rewrites `exchangehub-upstream.conf` -- so copy it to the server by hand.
+The zone is proxied through Cloudflare, which terminates TLS for visitors,
+caches the HTML at the edge and re-connects to the origin over TLS.
 
-This VPS hosts two sites. `alogweb` (`/etc/nginx/sites-enabled/alogweb`,
-proxying to `127.0.0.1:8093`) was configured first and holds 80/443; this is
-the second. They share both ports and are separated by SNI / `server_name`,
-so each needs its own certificate. Because `alogweb` sorts before
-`exchangehub.conf`, its blocks load first and are the implicit default
-server: any request whose SNI matches neither site lands on alogweb.
+**`deploy/CLOUDFLARE.md` is the runbook** -- what each layer does, the order to
+turn them on in, the command that proves each one is working and what every
+outcome means, plus a table of the failure modes and what causes them.
 
-1. Cloudflare dashboard -> SSL/TLS -> Origin Server -> **Create Certificate**,
-   for this zone specifically. The certificate already in
-   `/etc/ssl/cloudflare/` belongs to alogweb and covers only `alogweb.com`
-   and `*.alogweb.com`, so it cannot be reused here. Save the new pair:
+Two scripts do the work:
 
 ```bash
-sudo install -d -m 0755 /etc/ssl/cloudflare
-sudo install -m 0644 origin.pem /etc/ssl/cloudflare/ratehubfx.com.pem
-sudo install -m 0600 origin.key /etc/ssl/cloudflare/ratehubfx.com.key
-sudo curl -fsSLo /etc/ssl/cloudflare/origin-pull-ca.pem \
-  https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem
+sudo bash deploy/cloudflare-realip.sh                       # teach nginx the edge ranges
+python3 scripts/cloudflare_setup.py                         # report, changes nothing
+python3 scripts/cloudflare_setup.py --cache-rule --apply    # cache HTML at the edge
 ```
 
-2. Set Cloudflare SSL/TLS mode to **Full (strict)**. The `:80` block is left
-   serving normally rather than redirecting, so a wrong mode here degrades
-   instead of taking the site down; switch `:80` to a redirect only once
-   Full (strict) is confirmed, since "Flexible" would loop it forever.
+The nginx side lives in `deploy/nginx-exchangehub.conf` and is **not** deployed
+by pushing -- `deploy_blue_green.sh` only rewrites the blue/green upstream. Copy
+it to `/etc/nginx/sites-enabled/exchangehub.conf` and reload.
 
-3. Optional, and off by default to match the alogweb vhost: **Authenticated
-   Origin Pulls**. Turn it on in the dashboard (SSL/TLS -> Origin Server)
-   *first*, then uncomment `ssl_client_certificate` and `ssl_verify_client`.
-   Uncommenting them before the dashboard toggle answers every request 400.
+Monitoring and hardening
 
-4. Teach nginx which addresses are Cloudflare, so logs and `X-Real-IP` show
-   the visitor rather than an edge node:
+Already collected, and mostly unused:
 
-```bash
-sudo bash deploy/cloudflare-realip.sh
-```
-
-5. Install and reload. Nothing in the deploy pipeline writes this file, so
-   pushing to main will never update it -- it has to be copied by hand, once,
-   and again whenever this repo's copy changes:
-
-```bash
-sudo cp /etc/nginx/sites-enabled/exchangehub.conf /root/exchangehub.conf.bak
-sudo cp deploy/nginx-exchangehub.conf /etc/nginx/sites-enabled/exchangehub.conf
-sudo nginx -t && sudo nginx -s reload      # restore the .bak if -t fails
-```
-
-Notes
-
-- The upstream include at the top of the file stays commented out. Ubuntu's
-  `nginx.conf` already globs `/etc/nginx/conf.d/*.conf`, so the upstream that
-  `deploy_blue_green.sh` writes is loaded anyway; including it a second time
-  is a fatal `duplicate upstream "exchangehub_backend"` at `nginx -t`.
-- `listen 443 ssl http2;` works on every nginx since 1.9.5. On 1.25.1 and
-  later it logs a deprecation notice; there, use `listen 443 ssl;` plus a
-  separate `http2 on;`.
-- `mail.ratehubfx.com` is deliberately **not** proxied through Cloudflare and
-  does not go through nginx, so none of this affects mail.
-- The HTTPS block is purely additive: the existing `:80` block is untouched,
-  so installing it cannot take the site off the air. Both blocks proxy to the
-  same upstream with the same headers.
-- Until the `:443` block exists, TLS to the origin with SNI `ratehubfx.com`
-  falls through to alogweb. Switching Cloudflare to "Full" before installing
-  it would serve alogweb's content under ratehubfx.com; "Full (strict)" would
-  fail with a 526. Install the block first, change the mode second.
-- `http2` is a property of the listen socket rather than of a server block,
-  so the value here must match what alogweb declares for the same port.
-- `ssl_session_cache` uses a zone name of its own (`shared:ratehubfx:10m`);
-  two vhosts declaring the same zone name with different sizes is a fatal
-  error at `nginx -t`.
-- The alogweb vhost needs no edits for these two to coexist. Only two things
-  actually collide between vhosts, and neither is present: a second
-  `default_server` on a port ("a duplicate default server for 0.0.0.0:443"),
-  and a reused `ssl_session_cache` zone name at a different size. A differing
-  `http2` flag on a shared listen socket is tolerated.
-- Removing `/etc/nginx/sites-enabled/default` is safe. It holds the
-  `default_server` for port 80; with it gone the first vhost loaded takes
-  that role, and `alogweb` sorts before `exchangehub.conf`, so unmatched
-  Host and SNI both land on alogweb exactly as they do today.
-- Cloudflare does not cache HTML by default; the `Cache-Control` headers the
-  app sets are ignored at the edge until a Cache Rule marks the site eligible
-  for caching, so today every request still reaches the origin.
-- To create the Origin Certificate through the API instead of the dashboard,
-  an API token needs **Zone - SSL and Certificates - Edit** on the zone (the
-  SSL counterpart to the `Zone:DNS:Edit` the DNS import script uses). Origin
-  CA Keys still work but Cloudflare removes them on 2026-09-30.
-
-Monitoring, security and edge caching
-
-What already exists, and is mostly just unused:
-
-- **Google Analytics** is embedded and reports 15 custom events, including
-  Web Vitals (`web_vital_lcp`, `web_vital_cls`, `web_vital_inp`), `js_error`,
+- **Google Analytics** is embedded and reports 15 custom events, including Web
+  Vitals (`web_vital_lcp`, `web_vital_cls`, `web_vital_inp`), `js_error`,
   `api_request_error` and `contact_submit_success`. Real-user performance data
-  is already being collected; look under Reports -> Engagement -> Events.
+  is already there; look under Reports -> Engagement -> Events.
 - **Cloudflare Analytics** covers traffic, bandwidth, cache hit ratio and
-  Security Events for free, since the zone is already proxied.
+  Security Events for free.
 
-What the config adds:
+Added by `deploy/nginx-exchangehub.conf`:
 
-- `log_format ratehubfx` keeps nginx's `combined` prefix and appends
-  `host=`, `rt=` (what the visitor waited) and `urt=` (what the app took).
-  The gap between the two is nginx plus network.
-- `deploy/goaccess-report.sh` renders that log as an HTML report. It carries
-  the matching goaccess `--log-format`, so it needs no arguments:
+- `log_format ratehubfx` keeps nginx's `combined` prefix and appends `host=`,
+  `rt=` (what the visitor waited) and `urt=` (what the app took). The gap
+  between the two is nginx plus network.
+- Security headers on every response, errors included: HSTS,
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy`. **No CSP** -- the app inlines its scripts and styles and
+  loads gtag, jsdelivr and Google Translate, so a policy that is both useful and
+  non-breaking has to be worked out rather than guessed at.
+- Rate limits on `/contact` (10 r/m, it sends mail) and `/api/` (300 r/m with a
+  burst, since one page load fires five or six calls). Both return 429.
+
+Rate limits key on the client address, so **run `deploy/cloudflare-realip.sh`
+first** -- until nginx knows Cloudflare's ranges every visitor shares a handful
+of edge addresses and they throttle each other.
+
+Turn the log into a dashboard:
 
 ```bash
 sudo apt-get install -y goaccess
@@ -556,41 +493,9 @@ sudo bash deploy/goaccess-report.sh            # one-off HTML report
 sudo bash deploy/goaccess-report.sh --live     # keeps updating
 ```
 
-  The report lists visitor addresses and every URL requested. Keep it behind a
-  password, or read it locally over `scp`; do not serve it from a public vhost.
+The report lists visitor addresses and every URL requested. Keep it behind a
+password or read it locally over `scp`; do not serve it from a public vhost.
 
-- Security headers on every response, errors included: HSTS,
-  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and
-  `Permissions-Policy`. **No CSP** -- the app inlines its scripts and styles
-  and loads gtag, jsdelivr and Google Translate, so a policy that is both
-  useful and non-breaking has to be worked out rather than guessed at.
-- Rate limits on the two paths worth protecting: `/contact` at 10 r/m
-  (it sends mail) and `/api/` at 300 r/m with a burst, since one page load
-  fires five or six API calls. Both return 429 when tripped.
-
-**Run `deploy/cloudflare-realip.sh` before relying on either.** Rate limits
-key on the client address, and until nginx knows Cloudflare's ranges every
-visitor shares a handful of edge addresses -- they would throttle each other,
-and the logs would show Cloudflare rather than the visitor.
-
-Cloudflare-side settings are applied by `scripts/cloudflare_setup.py`, which
-reports by default and changes nothing without `--apply`:
-
-```bash
-python3 scripts/cloudflare_setup.py                        # report
-python3 scripts/cloudflare_setup.py --cache-rule --apply   # edge-cache HTML
-python3 scripts/cloudflare_setup.py --origin-pulls --apply
-```
-
-The cache rule matters most. Cloudflare does not cache HTML by default, so the
-`Cache-Control` the app sends is ignored at the edge and every request still
-reaches the origin; `cf-cache-status` reads `DYNAMIC`. The rule marks the zone
-cacheable with `edge_ttl: respect_origin` -- the TTL stays defined in one
-place, the app -- and excludes `/contact`, which carries a per-visitor token
-and is served `no-store`.
-
-Brotli is deliberately not configured at the origin: Cloudflare compresses to
-the visitor itself, so it would only affect the Cloudflare-to-origin hop.
 
 WP plugin (module) usage
 
