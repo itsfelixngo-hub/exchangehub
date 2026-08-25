@@ -110,6 +110,7 @@ def cache_rule_for(zone_name):
     hosts = f'"{zone_name}" "www.{zone_name}"'
     return {
         "description": RULE_DESCRIPTION,
+        "enabled": True,
         "expression": (
             f"(http.host in {{{hosts}}} "
             'and not starts_with(http.request.uri.path, "/contact"))'
@@ -160,7 +161,15 @@ def apply_cache_rule(zone, zone_name, token, rules, apply):
         "PUT", f"/zones/{zone}/rulesets/phases/{CACHE_PHASE}/entrypoint",
         token, data=json.dumps({"rules": merged}),
     )
-    print("\n  applied.")
+    print("\n  applied. Reading it back:")
+    _, after = show_cache_rules(zone, token)
+    if not any(r.get("description") == RULE_DESCRIPTION for r in after):
+        print("\n  WARNING: the rule is not in the ruleset after writing it.")
+        return
+    print("\n  Cloudflare needs a moment to publish. Then check with a GET:")
+    print("    curl -s -D - -o /dev/null https://<host>/ | grep -i cf-cache-status")
+    print("    first call MISS, the ones after HIT. Still DYNAMIC after a few")
+    print("    minutes means the rule is published but not matching.")
 
 
 def origin_pulls(zone, token, apply):
