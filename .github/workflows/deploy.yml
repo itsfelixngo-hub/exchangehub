@@ -49,8 +49,36 @@ jobs:
       - name: Build Docker image
         run: docker build --tag exchangehub:ci .
 
+  # The web tier is the Astro app, so nothing reaches production until it
+  # builds, typechecks and passes its own smoke test.
+  verify-astro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: astro-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: astro-web
+        run: npm ci
+
+      - name: Typecheck, build and smoke test
+        working-directory: astro-web
+        run: |
+          npm run check
+          npm run build
+          npm run smoke
+
   deploy:
-    needs: verify
+    needs: [verify, verify-astro]
     # Self-hosted runner installed on the production VPS.
     runs-on: [self-hosted, linux, exchangehub]
     timeout-minutes: 30
@@ -63,9 +91,25 @@ jobs:
           BLUE_PORT: ${{ secrets.BLUE_PORT || '5001' }}
           GREEN_PORT: ${{ secrets.GREEN_PORT || '5002' }}
           NGINX_UPSTREAM_CONF: ${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}
+          # One secret for both stacks — the Astro app reads this same .env
+          # (astro-web/src/lib/env.ts walks up to the repo root), so nothing
+          # new has to be stored for the cutover.
           PROD_ENV: ${{ secrets.PROD_ENV }}
           GITHUB_TOKEN: ${{ github.token }}
           SKIP_GIT_FETCH: 'true'
+          # Which app nginx serves. Set the repository variable WEB_STACK
+          # (Settings -> Secrets and variables -> Actions -> Variables) to
+          # 'flask' to roll back to the old app, or leave it unset for Astro.
+          # A variable rather than a secret: it is not sensitive, and unlike a
+          # secret its current value is visible in the UI, which matters for
+          # something that decides what production runs.
+          #
+          # Either direction is a normal blue/green switch — the new container
+          # is health-checked and warmed on the idle port before nginx moves,
+          # and the superseded one is removed only afterwards. So flipping this
+          # back and forth is safe, and the workflow_dispatch trigger above is
+          # how you do it without pushing a commit.
+          WEB_STACK: ${{ vars.WEB_STACK || 'astro' }}
         run: |
           set -euo pipefail
 
@@ -80,12 +124,48 @@ jobs:
 
           printf '%s\n' "$PROD_ENV" > .env
 
-          chmod +x scripts/deploy_blue_green.sh
-          APP_NAME="$APP_NAME" \
-          APP_DIR="$APP_DIR" \
-          BLUE_PORT="$BLUE_PORT" \
-          GREEN_PORT="$GREEN_PORT" \
-          NGINX_UPSTREAM_CONF="$NGINX_UPSTREAM_CONF" \
-          BRANCH="main" \
-          SKIP_GIT_FETCH="$SKIP_GIT_FETCH" \
-          scripts/deploy_blue_green.sh
+          chmod +x scripts/deploy_blue_green.sh scripts/deploy_astro.sh
+
+          case "$WEB_STACK" in
+            astro|flask) ;;
+            *) echo "WEB_STACK must be 'astro' or 'flask', got '$WEB_STACK'" >&2; exit 1 ;;
+          esac
+          echo "Deploying with WEB_STACK=$WEB_STACK"
+
+          # Shared by both scripts, so the two cannot disagree about which
+          # ports and which nginx upstream file they are switching.
+          export APP_NAME APP_DIR BLUE_PORT GREEN_PORT NGINX_UPSTREAM_CONF
+          export BRANCH=main
+          export SKIP_GIT_FETCH
+
+          if [ "$WEB_STACK" = "astro" ]; then
+            # Mailserver and fetcher only. DEPLOY_WEB=false because the web tier
+            # is the Astro app — the step below owns the blue/green ports and
+            # the nginx upstream, and this script would otherwise claim both
+            # for a gunicorn container.
+            DEPLOY_WEB=false scripts/deploy_blue_green.sh
+
+            # Then the web tier: build, health-check and warm the new Astro
+            # container, switch nginx onto it, and only then remove the old
+            # Astro container and any Flask web container it supersedes.
+            scripts/deploy_astro.sh
+          else
+            # Rollback. One script does the whole job here, the way it did
+            # before the Astro app existed — plus the names of the Astro
+            # containers it now supersedes, removed after nginx has moved.
+            SUPERSEDED_WEB_CONTAINERS="${APP_NAME}-astro-blue ${APP_NAME}-astro-green" \
+              scripts/deploy_blue_green.sh
+          fi
+
+          # Report what is actually serving, rather than what we meant to
+          # deploy. `version` is baked into each image (1 = Flask, 2 = Astro),
+          # so this line is the switch's own receipt in the job log.
+          active_color="$(cat .deploy-active-color)"
+          if [ "$active_color" = "blue" ]; then
+            active_port="$BLUE_PORT"
+          else
+            active_port="$GREEN_PORT"
+          fi
+          echo "Live now (${active_color} on ${active_port}):"
+          curl -fsS "http://127.0.0.1:${active_port}/healthz"
+          echo

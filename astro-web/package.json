@@ -1,0 +1,32 @@
+{
+  "name": "astro-web",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "check": "astro check",
+    "smoke": "node scripts/smoke.mjs",
+    "start": "node ./dist/server/entry.mjs"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.5",
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "astro": "^7.3.1",
+    "dotenv": "^17.4.2",
+    "nodemailer": "^10.0.0"
+  },
+  "allowScripts": {
+    "esbuild": true
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@types/nodemailer": "^8.0.1",
+    "typescript": "^6.0.3"
+  }
+}

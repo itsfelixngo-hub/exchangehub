@@ -1,0 +1,158 @@
+---
+import type { Challenge, ContactValues } from "../lib/contact";
+
+interface Props {
+  values: ContactValues;
+  errors: string[];
+  success: boolean;
+  challenge: Challenge;
+}
+
+const { values, errors, success, challenge } = Astro.props;
+
+const fieldStyle = "width:100%; background:#0c0b0d; border:1px solid #2a2426; border-radius:10px; padding:11px 13px; color:#f5f2f1; font-family:inherit; font-size:14.5px; outline:none;";
+const labelStyle = "display:block; font-size:13px; font-weight:600; color:#a79fa0; margin-bottom:7px;";
+---
+
+<form
+  id="contact-form"
+  method="post"
+  action="/contact"
+  novalidate
+  style="background:#151315; border:1px solid #2a2426; border-radius:16px; padding:26px 28px; margin-top:36px;"
+>
+  <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:19px; color:#f5f2f1; margin:0 0 6px;">Send a message</h2>
+  <div style="width:26px; height:2px; background:#e11d3f; margin-bottom:18px;"></div>
+
+  {success && (
+    <p style="margin:0 0 18px; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.35); color:#34d399; font-size:14px; border-radius:10px; padding:12px 14px;">
+      Thanks. Your message has been sent.
+    </p>
+  )}
+  {errors.length > 0 && (
+    <div style="margin:0 0 18px; background:rgba(225,29,63,0.1); border:1px solid rgba(225,29,63,0.35); color:#ff8095; font-size:14px; border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:5px;">
+      {errors.map((error) => <div>{error}</div>)}
+    </div>
+  )}
+
+  <input type="hidden" name="form_token" value={challenge.token} />
+  {/* Honeypot: hidden from people, tempting to a bot that fills every input. */}
+  <div aria-hidden="true" style="position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden;">
+    <label for="website">Website</label>
+    <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div>
+      <label for="contact-name" style={labelStyle}>Name</label>
+      <input id="contact-name" name="name" type="text" autocomplete="name" maxlength="80" value={values.name} required style={fieldStyle} />
+    </div>
+    <div>
+      <label for="contact-email" style={labelStyle}>Email</label>
+      <input id="contact-email" name="email" type="email" autocomplete="email" maxlength="120" value={values.email} required style={fieldStyle} />
+    </div>
+    <div style="grid-column:1 / -1;">
+      <label for="contact-subject" style={labelStyle}>Subject</label>
+      <input id="contact-subject" name="subject" type="text" maxlength="140" value={values.subject} required style={fieldStyle} />
+    </div>
+    <div style="grid-column:1 / -1;">
+      <label for="contact-message" style={labelStyle}>Message</label>
+      <textarea id="contact-message" name="message" maxlength="4000" required rows="6" style={`${fieldStyle} resize:vertical; line-height:1.6;`}>{values.message}</textarea>
+    </div>
+
+    <div
+      class="rotation-captcha"
+      data-rotation-start={challenge.rotationStart}
+      style="grid-column:1 / -1; display:flex; align-items:center; gap:22px; flex-wrap:wrap; background:#0c0b0d; border:1px solid #2a2426; border-radius:12px; padding:18px 20px;"
+    >
+      <div class="rotation-stage" aria-hidden="true" style="position:relative; width:140px; height:140px; flex:0 0 auto;">
+        <svg viewBox="0 0 140 140" role="img" focusable="false" style="position:absolute; inset:0; width:140px; height:140px;">
+          <defs>
+            <linearGradient id="captcha-sky" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0" stop-color="#38bdf8" />
+              <stop offset="1" stop-color="#22c55e" />
+            </linearGradient>
+          </defs>
+          <circle cx="70" cy="70" r="64" fill="#14100f" />
+          <circle cx="70" cy="70" r="43" fill="#f7f5f3" />
+          <path d="M70 10a60 60 0 0 1 52 30" fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round" />
+          <path d="M130 70a60 60 0 0 1-30 52" fill="none" stroke="#38bdf8" stroke-width="10" stroke-linecap="round" />
+          <path d="M70 130a60 60 0 0 1-52-30" fill="none" stroke="#22c55e" stroke-width="10" stroke-linecap="round" />
+          <path d="M10 70a60 60 0 0 1 30-52" fill="none" stroke="#facc15" stroke-width="10" stroke-linecap="round" />
+          <path d="M70 21v28M119 70H91M70 119V91M21 70h28" stroke="#fff" stroke-width="5" stroke-linecap="round" />
+          <circle cx="70" cy="70" r="44" fill="none" stroke="#ded7d1" stroke-width="2" />
+        </svg>
+        <svg
+          class="rotation-piece"
+          viewBox="0 0 100 100"
+          role="img"
+          focusable="false"
+          style="position:absolute; left:20px; top:20px; width:100px; height:100px; transform-origin:50% 50%;"
+        >
+          <circle cx="50" cy="50" r="49" fill="#14100f" />
+          <path d="M50 2a48 48 0 0 1 42 24" fill="none" stroke="#f59e0b" stroke-width="12" stroke-linecap="round" />
+          <path d="M98 50a48 48 0 0 1-24 42" fill="none" stroke="#38bdf8" stroke-width="12" stroke-linecap="round" />
+          <path d="M50 98A48 48 0 0 1 8 74" fill="none" stroke="#22c55e" stroke-width="12" stroke-linecap="round" />
+          <path d="M2 50A48 48 0 0 1 26 8" fill="none" stroke="#facc15" stroke-width="12" stroke-linecap="round" />
+          <path d="M50 0v28M100 50H72M50 100V72M0 50h28" stroke="#fff" stroke-width="6" stroke-linecap="round" />
+          <circle cx="50" cy="50" r="20" fill="url(#captcha-sky)" />
+          <circle cx="50" cy="50" r="8" fill="#fff" />
+        </svg>
+      </div>
+      <div style="flex:1; min-width:240px;">
+        <label for="rotation-response" style={labelStyle}>Rotate image 1 to match image 2</label>
+        <input id="rotation-response" class="rotation-slider" type="range" min="0" max="359" step="1" value="0" style="width:100%; accent-color:#e11d3f;" />
+        <input class="rotation-response" name="rotation_response" type="hidden" value="0" />
+        <p style="font-size:13px; color:#6f6864; margin:8px 0 0;">Slide until the inner piece lines up with the outer picture.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:20px;">
+    <button
+      type="submit"
+      style="height:46px; padding:0 26px; border-radius:999px; background:#e11d3f; color:#fff; border:none; font-family:inherit; font-weight:700; font-size:15px; cursor:pointer;"
+    >
+      Send message
+    </button>
+    <p style="font-size:13px; color:#6f6864; margin:0;">Protected by server-side spam checks.</p>
+  </div>
+</form>
+
+<style>
+  #contact-form input:focus,
+  #contact-form textarea:focus {
+    border-color: #e11d3f;
+  }
+  #contact-form input,
+  #contact-form textarea,
+  .rotation-piece {
+    transition:
+      border-color 0.18s ease,
+      transform 0.12s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #contact-form input,
+    #contact-form textarea,
+    .rotation-piece {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>(".rotation-captcha").forEach((captcha) => {
+    const start = Number(captcha.dataset.rotationStart || 0);
+    const piece = captcha.querySelector<SVGElement>(".rotation-piece");
+    const slider = captcha.querySelector<HTMLInputElement>(".rotation-slider");
+    const response = captcha.querySelector<HTMLInputElement>(".rotation-response");
+    if (!piece || !slider || !response) return;
+    function updateRotation() {
+      const value = Number(slider!.value || 0);
+      piece!.style.transform = `rotate(${start + value}deg)`;
+      response!.value = String(value);
+    }
+    slider.addEventListener("input", updateRotation);
+    updateRotation();
+  });
+</script>

@@ -4,6 +4,13 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
+# Which build is answering /healthz — see astro-web/Dockerfile for why this is
+# an image argument rather than a .env key. 1 = this app, 2 = the Astro one.
+ARG APP_VERSION=1
+ARG APP_BUILD=unknown
+ENV APP_VERSION=$APP_VERSION
+ENV APP_BUILD=$APP_BUILD
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 

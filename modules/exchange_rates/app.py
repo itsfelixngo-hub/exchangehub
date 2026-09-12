@@ -2179,7 +2179,18 @@ def robots_txt():
 
 @app.route("/healthz")
 def healthz():
-    return jsonify({"ok": True, "service": "exchangehub"})
+    # `ok` and `service` are unchanged; the rest says which build answered, so
+    # one curl tells you whether nginx is on this app or the Astro one. They
+    # come from the image (see the ARGs in Dockerfile), not from .env, because
+    # both stacks share one .env and would then report the same number.
+    return jsonify({
+        "ok": True,
+        "service": "exchangehub",
+        "version": int(os.environ.get("APP_VERSION") or 1),
+        "stack": "flask",
+        "build": os.environ.get("APP_BUILD") or "unknown",
+        "color": os.environ.get("APP_COLOR") or "unknown",
+    })
 
 
 @app.route("/sitemap.xml")

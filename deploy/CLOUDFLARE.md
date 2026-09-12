@@ -131,6 +131,22 @@ curl -s --compressed https://ratehubfx.com/ | grep -o '<link rel="canonical" hre
 `https://ratehubfx.com/` means the CF→origin hop is TLS. `http://` means the
 zone is still on Flexible, whatever the padlock suggests.
 
+**This check no longer works when `SITE_URL` is set.** The Astro app prefers
+that value over the forwarded headers (`astro-web/src/lib/site.ts`), precisely
+so a missing header can never produce an `http://` canonical — which also
+means the canonical stops reflecting the CF→origin scheme.
+`scripts/deploy_astro.sh` always passes it, so on production ask nginx
+directly instead:
+
+```bash
+sudo tail -3 /var/log/nginx/ratehubfx.access.log   # after adding $scheme to the log format
+# or, from the origin itself, bypassing Cloudflare:
+curl -sk --resolve ratehubfx.com:443:127.0.0.1 https://ratehubfx.com/healthz
+```
+
+To use the canonical as the probe again, unset `SITE_URL` in `.env` and
+redeploy; the app then falls back to `X-Forwarded-Proto` as before.
+
 ---
 
 ## 3. Real visitor addresses
@@ -186,6 +202,16 @@ rule landed rather than inferring it from cache headers.
 This is only safe because the server renders one page for every visitor.
 Timestamps travel as UTC in `<time datetime="...Z">` and the browser converts
 them; a per-visitor render would make the pages uncacheable.
+
+That last sentence is exactly the case for the Astro front end in
+`astro-web/`: its pages render per visitor — the header language follows the
+`site_lang` cookie, and the home board, converter and hero follow the country
+that cookie or `CF-IPCountry` resolves to. Its middleware
+(`astro-web/src/middleware.ts`) therefore sends `Cache-Control: private` on
+every HTML response, which keeps the rule above from storing one visitor's
+language and handing it to the next. Do not override that with a cache rule
+that ignores origin headers; caching those pages again means making them
+visitor-independent first.
 
 ### Verify
 

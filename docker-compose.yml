@@ -83,6 +83,52 @@ services:
       - CONTACT_MIN_SUBMIT_SECONDS=${CONTACT_MIN_SUBMIT_SECONDS:-3}
       - CONTACT_ROTATION_TOLERANCE=${CONTACT_ROTATION_TOLERANCE:-8}
 
+  # The site itself. `web` above is the Flask app it replaces, kept for now so
+  # the two can be compared side by side on different ports; production runs
+  # only this one (scripts/deploy_astro.sh).
+  astro:
+    container_name: exchangehub-astro
+    image: exchangehub-astro:latest
+    build: ./astro-web
+    ports:
+      - "${ASTRO_PORT:-4321}:4321"
+    volumes:
+      # Read-only: the fetcher owns these files, the web tier only reads them.
+      - ${UPLOADS_HOST_PATH:-./wp-content/uploads}:/data/uploads:ro
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=4321
+      - WP_UPLOADS=/data/uploads
+      # Absolute URLs (canonical, og:url, sitemap) cannot be derived from the
+      # request behind a proxy — see astro-web/src/lib/site.ts.
+      - SITE_URL=${SITE_URL:-http://localhost:4321}
+      - R2_ENABLED=${R2_ENABLED:-}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
+      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL:-}
+      - R2_BUCKET=${R2_BUCKET:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_PREFIX=${R2_PREFIX:-}
+      - R2_READ_CACHE_SECONDS=${R2_READ_CACHE_SECONDS:-60}
+      - PAIR_CONCURRENCY=${PAIR_CONCURRENCY:-6}
+      - CHART_MAX_POINTS=${CHART_MAX_POINTS:-400}
+      - PAIR_CHART_MAX_POINTS=${PAIR_CHART_MAX_POINTS:-600}
+      # Set CONTACT_SECRET, or a restart invalidates any form being filled in.
+      - CONTACT_SECRET=${CONTACT_SECRET:-}
+      - CONTACT_FORWARD_TO=${CONTACT_FORWARD_TO:-test.noreply909@gmail.com}
+      - CONTACT_FROM_EMAIL=${CONTACT_FROM_EMAIL:-contact@ratehubfx.com}
+      - CONTACT_SMTP_HOST=${CONTACT_SMTP_HOST:-mailserver}
+      - CONTACT_SMTP_PORT=${CONTACT_SMTP_PORT:-587}
+      - CONTACT_SMTP_USER=${CONTACT_SMTP_USER:-}
+      - CONTACT_SMTP_PASSWORD=${CONTACT_SMTP_PASSWORD:-}
+      - CONTACT_SMTP_USE_TLS=${CONTACT_SMTP_USE_TLS:-true}
+      - CONTACT_SMTP_TLS_VERIFY=${CONTACT_SMTP_TLS_VERIFY:-false}
+      - CONTACT_RATE_LIMIT_SECONDS=${CONTACT_RATE_LIMIT_SECONDS:-60}
+      - CONTACT_MIN_SUBMIT_SECONDS=${CONTACT_MIN_SUBMIT_SECONDS:-3}
+      - CONTACT_ROTATION_TOLERANCE=${CONTACT_ROTATION_TOLERANCE:-8}
+    restart: unless-stopped
+
   fetcher:
     container_name: exchangehub-fetcher
     image: exchangehub-fetcher:latest

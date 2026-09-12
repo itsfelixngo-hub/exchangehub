@@ -1,0 +1,80 @@
+---
+export const prerender = false;
+
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import BackToTop from "../components/BackToTop.astro";
+import { buildMenuModel } from "../lib/menu";
+import { buildPairMovers } from "../lib/home";
+import { resolveVisitorLocale } from "../lib/geo";
+import { RATE_PAIRS, pairUrl } from "../lib/config";
+import { flagSrc, SWAP_ICON } from "../lib/flags";
+
+// The old site's /chart was a standalone chart tool. Here every pair page
+// already carries the full interactive chart, so this is the index into them
+// rather than a second charting UI — and it keeps the "Charts" nav item and
+// the home page's chart call-to-action pointing at something real.
+const menu = buildMenuModel();
+const pairMovers = await buildPairMovers();
+const locale = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_lang")?.value);
+
+const storedPairs = RATE_PAIRS.map(([base, target]) => ({ base, target }));
+const description = "Browse exchange-rate charts for every tracked currency pair, with range selection, high-low statistics, and conversion tables on each pair page.";
+---
+
+<Layout title="Currency Pair Charts" description={description} path="/chart" breadcrumbName="Charts">
+  <div>
+    <Header pairMovers={pairMovers} active="Charts" autoLang={locale.lang} />
+
+    <div style="background:radial-gradient(1100px 560px at 82% -10%, rgba(225,29,63,0.22), transparent 60%), #0c0b0d; padding:56px 40px 80px; font-family:'Manrope', Arial, sans-serif;">
+      <div style="max-width:1160px; margin:0 auto;">
+        <h1 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; color:#f5f2f1; margin:0 0 12px; line-height:1.15;">Currency pair charts</h1>
+        <p style="font-size:16px; line-height:1.7; color:#a79fa0; margin:0 0 36px; max-width:620px;">
+          Every pair page draws the full stored history with selectable ranges, high-low-average statistics for the window on screen, and a conversion table.
+        </p>
+
+        {menu.groups.map((group) => (
+          <div style="margin-bottom:28px;">
+            <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:18px; color:#f5f2f1; margin:0 0 6px;">{group.title}</h2>
+            <div style="width:26px; height:2px; background:#e11d3f; margin-bottom:14px;"></div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px;">
+              {group.links.map((link) => (
+                <a
+                  href={link.href}
+                  translate="no"
+                  style="display:flex; align-items:center; justify-content:center; gap:6px; border:1px solid #2a2426; border-radius:10px; background:#151315; color:#e4dfdc; font-size:13px; font-weight:600; padding:11px 12px;"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <div style="margin-top:36px;">
+          <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:18px; color:#f5f2f1; margin:0 0 6px;">All tracked pairs</h2>
+          <div style="width:26px; height:2px; background:#e11d3f; margin-bottom:14px;"></div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px;">
+            {storedPairs.map((pair) => (
+              <a
+                href={pairUrl(pair.base, pair.target)}
+                translate="no"
+                style="display:flex; align-items:center; gap:8px; border:1px solid #2a2426; border-radius:10px; background:#151315; color:#e4dfdc; font-size:13px; font-weight:600; padding:10px 12px;"
+              >
+                <img src={flagSrc(pair.base)} alt="" width="18" height="18" style="display:block; flex:0 0 auto;" />
+                {pair.base}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="flex:0 0 auto;" set:html={SWAP_ICON} />
+                {pair.target}
+                <img src={flagSrc(pair.target)} alt="" width="18" height="18" style="display:block; flex:0 0 auto;" />
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <Footer menu={menu} />
+    <BackToTop />
+  </div>
+</Layout>

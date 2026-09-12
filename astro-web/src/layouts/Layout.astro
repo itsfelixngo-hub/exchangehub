@@ -1,0 +1,108 @@
+---
+import { siteOrigin } from "../lib/site";
+
+interface Props {
+  title: string;
+  description: string;
+  path: string;
+  breadcrumbName?: string;
+  extraSchemaNodes?: unknown[];
+  ogImage?: string;
+}
+
+const { title, description, path, breadcrumbName, extraSchemaNodes = [], ogImage } = Astro.props;
+
+const siteBaseUrl = siteOrigin(Astro.request, Astro.url);
+const canonicalUrl = siteBaseUrl + path;
+const logoUrl = `${siteBaseUrl}/ratehub-2c.png`;
+const ogImageUrl = ogImage ?? `${siteBaseUrl}/og-image.png`;
+
+const schema = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${siteBaseUrl}/#organization`,
+      name: "ExchangeHub",
+      url: siteBaseUrl,
+      logo: { "@type": "ImageObject", url: logoUrl },
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${siteBaseUrl}/#website`,
+      name: "ExchangeHub",
+      url: siteBaseUrl,
+      publisher: { "@id": `${siteBaseUrl}/#organization` },
+      inLanguage: "en",
+    },
+    {
+      "@type": "WebPage",
+      "@id": `${canonicalUrl}#webpage`,
+      url: canonicalUrl,
+      name: title,
+      description,
+      isPartOf: { "@id": `${siteBaseUrl}/#website` },
+      publisher: { "@id": `${siteBaseUrl}/#organization` },
+      breadcrumb: { "@id": `${canonicalUrl}#breadcrumb` },
+      inLanguage: "en",
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": `${canonicalUrl}#breadcrumb`,
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Exchange Rates", item: siteBaseUrl },
+        { "@type": "ListItem", position: 2, name: breadcrumbName ?? title },
+      ],
+    },
+    ...extraSchemaNodes,
+  ],
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
+    <link rel="canonical" href={canonicalUrl} />
+    <!-- Generated from the site logo (public/ratehub-2b-icon.png), cropped to
+         the "fx" mark — the bars beside it turn to mush at 16px. -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/png" href="/favicon-32.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="/favicon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ExchangeHub" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
+    />
+    <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+    <style is:global>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: 'Manrope', Arial, sans-serif; }
+      table { border-collapse: collapse; width: 100%; }
+      a { text-decoration: none; color: inherit; }
+      .picker-scroll { scrollbar-width: thin; scrollbar-color: #3a332f transparent; }
+      .picker-scroll::-webkit-scrollbar { width: 6px; }
+      .picker-scroll::-webkit-scrollbar-track { background: transparent; }
+      .picker-scroll::-webkit-scrollbar-thumb { background: #3a332f; border-radius: 3px; }
+      .picker-scroll::-webkit-scrollbar-thumb:hover { background: #57504c; }
+    </style>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

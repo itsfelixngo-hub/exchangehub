@@ -17,3 +17,10 @@ venv
 wp-content/uploads
 rates.db
 fetch.log
+# The Astro app has its own image (astro-web/Dockerfile) and its own build
+# context. Left in, its node_modules added ~320 MB to this image -- which now
+# only runs the fetcher -- for files nothing here imports.
+astro-web
+deploy
+.vscode
+.idea

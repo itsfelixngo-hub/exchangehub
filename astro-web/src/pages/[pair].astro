@@ -1,0 +1,791 @@
+---
+export const prerender = false;
+
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import BackToTop from "../components/BackToTop.astro";
+import { buildMenuModel } from "../lib/menu";
+import { buildPairMovers } from "../lib/home";
+import { CURRENCY_PROFILES, configCurrencies, currencyProfile, pairUrl } from "../lib/config";
+import { formatRate } from "../lib/format";
+import { flagSrc, SWAP_ICON, CHEVRON_DOWN } from "../lib/flags";
+import { resolveVisitorLocale } from "../lib/geo";
+import { siteOrigin } from "../lib/site";
+import {
+  buildPairContent, buildPairModel, chartSeries, conversionRows, rangeOptions,
+} from "../lib/pair";
+
+// `/eur-usd` — anything that isn't two configured currency codes is a 404
+// rather than a page about a pair we hold no rates for.
+const slug = (Astro.params.pair ?? "").toLowerCase();
+const parts = slug.split("-");
+const currencies = configCurrencies();
+const base = (parts[0] ?? "").toUpperCase();
+const target = (parts[1] ?? "").toUpperCase();
+const valid = parts.length === 2 && base !== target && currencies.includes(base) && currencies.includes(target);
+
+if (!valid) {
+  return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+
+const model = await buildPairModel(base, target);
+const content = buildPairContent(model);
+const series = chartSeries(model.history);
+const { options: ranges, defaultKey: defaultRange } = rangeOptions(series);
+const menu = buildMenuModel(base, target);
+const pairMovers = await buildPairMovers(6, base);
+// Same language resolution as the home page, or the header here would show
+// the English flag and skip the auto-translation the visitor already picked.
+const locale = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_lang")?.value);
+
+const stats = model.stats;
+const rate = model.rate;
+const reverseRate = model.reverseRate;
+const rateLabel = rate === null ? "—" : formatRate(rate);
+const reverseLabel = reverseRate === null ? "—" : formatRate(reverseRate);
+const updated = model.latest ? new Date(model.latest.ts * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "";
+const updatedIso = model.latest ? new Date(model.latest.ts * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") : "";
+const changeLabel = stats ? `${stats.changePct >= 0 ? "+" : ""}${stats.changePct.toFixed(2)}%` : "—";
+const changeColor = stats?.direction === "up" ? "#16a34a" : stats?.direction === "down" ? "#e11d3f" : "#8b857f";
+
+const forwardRows = conversionRows(model.amounts, base, target, rate);
+const reverseRows = conversionRows(model.amounts, target, base, reverseRate);
+
+const baseProfile = currencyProfile(base);
+const targetProfile = currencyProfile(target);
+
+const title = `${base} to ${target} Exchange Rate Today`;
+const description = `${base} to ${target} exchange rate today with converter, chart, statistics, trend notes, and practical ${base}/${target} context.`
+  + (rate === null ? "" : ` Latest: 1 ${base} = ${rateLabel} ${target}.`);
+
+const canonicalUrl = siteOrigin(Astro.request, Astro.url) + pairUrl(base, target);
+const extraSchemaNodes = [
+  {
+    "@type": "FAQPage",
+    "@id": `${canonicalUrl}#faq`,
+    mainEntity: content.faqs.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: { "@type": "Answer", text: item.answer },
+    })),
+  },
+  ...(rate === null ? [] : [{
+    "@type": "ExchangeRateSpecification",
+    "@id": `${canonicalUrl}#rate`,
+    currency: base,
+    currentExchangeRate: {
+      "@type": "UnitPriceSpecification",
+      price: rate,
+      priceCurrency: target,
+    },
+    ...(updatedIso ? { validFrom: updatedIso } : {}),
+  }]),
+];
+
+const cardBg = "background:#151315; border:1px solid #2a2426;";
+
+// The tool tabs scroll to the sections below rather than swapping panes, so
+// the active pill follows the scroll position instead of a click.
+const TOOL_TABS = [
+  { id: "converter-table", label: "Convert", icon: SWAP_ICON },
+  { id: "chart-card", label: "Chart", icon: `<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>` },
+  { id: "stats-card", label: "Stats", icon: `<path d="M4 19h16M4 15h10M4 11h16M4 7h10"/>` },
+  { id: "faq", label: "FAQ", icon: `<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 113.5 2.3V14M12 17h.01"/>` },
+];
+---
+
+<Layout
+  title={title}
+  description={description}
+  path={pairUrl(base, target)}
+  breadcrumbName={`${base} to ${target}`}
+  extraSchemaNodes={extraSchemaNodes}
+>
+  <div>
+    <Header pairMovers={pairMovers} active="Charts" autoLang={locale.lang} />
+
+    <div style="background:radial-gradient(1100px 560px at 82% -10%, rgba(225,29,63,0.22), transparent 60%), #0c0b0d; padding:40px 40px 80px; font-family:'Manrope', Arial, sans-serif;">
+      <div style="max-width:1160px; margin:0 auto;">
+
+        <div id="chart-card" style="background:#fff; border-radius:20px; padding:28px 32px 20px; box-shadow:0 24px 60px rgba(0,0,0,0.35);">
+
+          <div style="display:inline-flex; align-items:center; background:#f4f1ee; border-radius:999px; padding:5px; gap:4px; margin-bottom:28px; flex-wrap:wrap;">
+            {TOOL_TABS.map((tab) => (
+              <a
+                href={`#${tab.id}`}
+                class="tool-tab"
+                data-target={tab.id}
+                data-active={tab.id === "chart-card" ? "true" : "false"}
+                style={`display:inline-flex; align-items:center; gap:7px; padding:9px 18px; border-radius:999px; font-size:14px; background:${tab.id === "chart-card" ? "#14100f" : "transparent"}; color:${tab.id === "chart-card" ? "#fff" : "#3a332f"}; font-weight:${tab.id === "chart-card" ? "700" : "600"};`}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" set:html={tab.icon} />
+                {tab.label}
+              </a>
+            ))}
+          </div>
+
+          <div style="display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:20px;">
+            {[
+              { side: "from", label: "From", code: base, name: baseProfile.name },
+              { side: "to", label: "To", code: target, name: targetProfile.name },
+            ].map((field, index) => (
+              <>
+                {index === 1 && (
+                  <a
+                    href={pairUrl(target, base)}
+                    title={`Show ${target} to ${base}`}
+                    style="flex:0 0 auto; width:38px; height:38px; margin-bottom:2px; border-radius:50%; background:#fff; border:1px solid #e6e1de; box-shadow:0 4px 10px rgba(0,0,0,0.1); display:flex; align-items:center; justify-content:center;"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e11d3f" stroke-width="2.2" set:html={SWAP_ICON} />
+                  </a>
+                )}
+                <div style="flex:1; min-width:220px; position:relative;">
+                  <div style="font-size:13px; color:#6b6560; font-weight:600; margin-bottom:8px;">{field.label}</div>
+                  <button
+                    type="button"
+                    class="pair-picker-btn"
+                    data-side={field.side}
+                    style="display:flex; width:100%; align-items:center; justify-content:space-between; gap:10px; border:1px solid #e6e1de; border-radius:10px; padding:12px 14px; background:#fff; cursor:pointer; font-family:inherit;"
+                  >
+                    <span style="display:flex; align-items:center; gap:8px; font-weight:700; color:#14100f; font-size:15px;">
+                      <img src={flagSrc(field.code)} alt="" width="22" height="22" style="display:block; flex:0 0 auto;" />
+                      <span translate="no">{field.code}</span> - <span>{field.name}</span>
+                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6560" stroke-width="2.4" set:html={CHEVRON_DOWN} />
+                  </button>
+                  <div
+                    class="pair-picker-panel picker-scroll"
+                    data-side={field.side}
+                    style="display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30; max-height:260px; overflow-y:auto; background:#fff; border:1px solid #e6e1de; border-radius:10px; box-shadow:0 16px 40px rgba(15,23,42,.14); padding:6px;"
+                  >
+                    {currencies.map((code) => (
+                      <a
+                        href={field.side === "from" ? pairUrl(code, target) : pairUrl(base, code)}
+                        style={`display:${code === (field.side === "from" ? target : base) ? "none" : "flex"}; align-items:center; gap:8px; border-radius:8px; padding:8px; font-size:13px; color:#14100f; background:${code === field.code ? "#f4f1ee" : "transparent"};`}
+                      >
+                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" />
+                        <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ))}
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:28px;">
+            <div style="display:flex; align-items:center; gap:6px; font-size:13px; color:#6b6560;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b857f" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v5h1" /></svg>
+              We use mid-market rates for this chart.
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <a href={pairUrl(target, base)} class="pair-cta" style="height:42px; padding:0 20px; border-radius:999px; background:#fff; color:#e11d3f; border:1.5px solid #e11d3f; font-weight:700; font-size:14px; display:inline-flex; align-items:center;">Reverse pair</a>
+              <button type="button" id="range-max" class="pair-cta" style="height:42px; padding:0 20px; border-radius:999px; background:#e11d3f; color:#fff; border:none; font-weight:700; font-size:14px; cursor:pointer; font-family:inherit;">View full history</button>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:6px;">
+            <div>
+              <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+                <h1 style="margin:0; font-family:'Space Grotesk', Arial, sans-serif; font-size:22px; color:#14100f;">
+                  <span translate="no">{base}</span> to <span translate="no">{target}</span> Chart
+                </h1>
+                <span translate="no" style="font-size:15px; font-weight:700;">
+                  <span id="change-value" style={`color:${changeColor};`}>{changeLabel}</span>
+                  <span id="change-range" style="font-weight:500; color:#8b857f;">({defaultRange})</span>
+                </span>
+              </div>
+              <div style="font-size:13px; color:#8b857f; margin-top:2px;">{baseProfile.name} to {targetProfile.name}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; font-size:13px; color:#6b6560;">
+              <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#22c55e" /></svg>
+              <span translate="no">1 {base} = {rateLabel} {target}</span>{updated && <span>, {updated}</span>}
+            </div>
+          </div>
+
+          <div style="display:flex; gap:6px; margin:18px 0 12px; flex-wrap:wrap;">
+            {ranges.map((range) => (
+              <button
+                type="button"
+                class="range-tab"
+                data-range={range.key}
+                data-seconds={range.seconds}
+                data-active={range.key === defaultRange ? "true" : "false"}
+                disabled={!range.enabled}
+                style={`padding:6px 12px; border:none; border-radius:999px; font-family:inherit; font-size:13px; font-weight:${range.key === defaultRange ? "700" : "600"}; cursor:${range.enabled ? "pointer" : "default"}; background:${range.key === defaultRange ? "#e11d3f" : "transparent"}; color:${range.key === defaultRange ? "#fff" : range.enabled ? "#6b6560" : "#c9c2bd"};`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
+
+          {series.length >= 2 ? (
+            <>
+              <div id="chart-wrap" style="position:relative; padding-right:66px;">
+                <svg id="chart" width="100%" height="260" viewBox="0 0 1100 260" preserveAspectRatio="none" style="display:block; overflow:visible;">
+                  <defs>
+                    <linearGradient id="pairFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#e11d3f" stop-opacity="0.16" />
+                      <stop offset="1" stop-color="#e11d3f" stop-opacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <line x1="0" y1="20" x2="1100" y2="20" stroke="#f0ece9" stroke-width="1" vector-effect="non-scaling-stroke" />
+                  <line x1="0" y1="80" x2="1100" y2="80" stroke="#f0ece9" stroke-width="1" vector-effect="non-scaling-stroke" />
+                  <line x1="0" y1="140" x2="1100" y2="140" stroke="#f0ece9" stroke-width="1" vector-effect="non-scaling-stroke" />
+                  <line x1="0" y1="200" x2="1100" y2="200" stroke="#f0ece9" stroke-width="1" vector-effect="non-scaling-stroke" />
+                  <line x1="0" y1="240" x2="1100" y2="240" stroke="#f0ece9" stroke-width="1" vector-effect="non-scaling-stroke" />
+                  <polygon id="chart-area" points="" fill="url(#pairFill)" />
+                  <polyline id="chart-line" points="" fill="none" stroke="#e11d3f" stroke-width="1.8" vector-effect="non-scaling-stroke" />
+                  <line id="chart-cursor" x1="0" y1="0" x2="0" y2="260" stroke="#c9c2bd" stroke-width="1" vector-effect="non-scaling-stroke" style="display:none;" />
+                </svg>
+                <div id="chart-axis" translate="no" style="position:absolute; top:0; right:0; width:60px; height:260px; pointer-events:none; font-size:11px; color:#8b857f;"></div>
+                <div id="chart-dot" style="position:absolute; display:none; width:9px; height:9px; margin:-4.5px 0 0 -4.5px; border-radius:50%; background:#e11d3f; box-shadow:0 0 0 3px rgba(225,29,63,0.18); pointer-events:none;"></div>
+                <div id="chart-tip" translate="no" style="position:absolute; display:none; transform:translate(-50%,-100%); margin-top:-14px; white-space:nowrap; background:#14100f; color:#fff; font-size:12px; line-height:1.4; padding:7px 10px; border-radius:8px; pointer-events:none; z-index:5;"></div>
+              </div>
+              <div id="chart-x" translate="no" style="display:flex; justify-content:space-between; padding-right:66px; margin-top:8px; font-size:12px; color:#8b857f;"></div>
+
+              <div style="height:56px; border-radius:10px; background:#fdecee; position:relative; overflow:hidden; margin:14px 66px 20px 0;">
+                <svg width="100%" height="56" viewBox="0 0 1100 56" preserveAspectRatio="none" style="display:block;">
+                  <polygon id="brush-area" points="" fill="#f7c3c9" />
+                </svg>
+                <div id="brush-left" style="position:absolute; left:0; top:0; bottom:0; width:0; background:rgba(20,16,15,0.12);"></div>
+                <div id="brush-right" style="position:absolute; right:0; top:0; bottom:0; width:0; background:rgba(20,16,15,0.12);"></div>
+              </div>
+            </>
+          ) : (
+            <div style="border:1px dashed #e6e1de; border-radius:12px; padding:40px; text-align:center; color:#8b857f; font-size:14px; margin-bottom:12px;">
+              Not enough stored history yet to draw a chart for this pair.
+            </div>
+          )}
+        </div>
+
+        <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:24px; margin-top:24px;">
+          <div id="converter-table" style={`${cardBg} border-radius:16px; padding:24px 28px;`}>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+              <h2 style="margin:0; font-family:'Space Grotesk', Arial, sans-serif; font-size:18px; color:#f5f2f1;">
+                <span translate="no">{base}</span> to <span translate="no">{target}</span> converter
+              </h2>
+              <div style="display:inline-flex; background:#0c0b0d; border:1px solid #2a2426; border-radius:999px; padding:3px; gap:2px;">
+                <button type="button" class="table-tab" data-table="forward" data-active="true" translate="no" style="border:none; border-radius:999px; padding:6px 12px; font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; background:#e11d3f; color:#fff;">{base} → {target}</button>
+                <button type="button" class="table-tab" data-table="reverse" data-active="false" translate="no" style="border:none; border-radius:999px; padding:6px 12px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; background:transparent; color:#a79fa0;">{target} → {base}</button>
+              </div>
+            </div>
+            {[
+              { key: "forward", from: base, to: target, rows: forwardRows },
+              { key: "reverse", from: target, to: base, rows: reverseRows },
+            ].map((table) => (
+              <table class="pair-table" data-table-body={table.key} style={`display:${table.key === "forward" ? "table" : "none"};`}>
+                <thead>
+                  <tr>
+                    <th translate="no" style="text-align:left; padding:8px 0; border-bottom:1px solid #2a2426; font-size:12px; color:#a79fa0; text-transform:uppercase; letter-spacing:.05em;">{table.from}</th>
+                    <th translate="no" style="text-align:right; padding:8px 0; border-bottom:1px solid #2a2426; font-size:12px; color:#a79fa0; text-transform:uppercase; letter-spacing:.05em;">{table.to}</th>
+                  </tr>
+                </thead>
+                <tbody style="color:#e4dfdc; font-size:14px;">
+                  {table.rows.map((row, i) => (
+                    <tr>
+                      <td translate="no" style={`padding:9px 0; ${i < table.rows.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>{row.from}</td>
+                      <td translate="no" style={`padding:9px 0; text-align:right; font-variant-numeric:tabular-nums; ${i < table.rows.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>{row.to}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ))}
+            <p style="font-size:13px; color:#6f6864; margin:14px 0 0;">
+              {updated && <>Converter updated {updated}. </>}
+              <span translate="no">Reverse rate: 1 {target} = {reverseLabel} {base}.</span>
+            </p>
+          </div>
+
+          <div id="stats-card" style={`${cardBg} border-radius:16px; padding:24px 28px;`}>
+            <h2 style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:18px; color:#f5f2f1;">
+              <span translate="no">{base}</span> to <span translate="no">{target}</span> statistics
+            </h2>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+              {[
+                { id: "stat-high", label: "High", ranged: true, value: stats ? formatRate(stats.high) : "—" },
+                { id: "stat-low", label: "Low", ranged: true, value: stats ? formatRate(stats.low) : "—" },
+                { id: "stat-average", label: "Average", ranged: false, value: stats ? formatRate(stats.average) : "—" },
+                { id: "stat-points", label: "Data points", ranged: false, value: stats ? String(stats.points) : "—" },
+              ].map((tile) => (
+                <div>
+                  <div style="font-size:12px; color:#a79fa0; text-transform:uppercase; letter-spacing:.05em;">
+                    {tile.label}{tile.ranged && <> (<span class="stat-range" translate="no">{defaultRange}</span>)</>}
+                  </div>
+                  <div id={tile.id} translate="no" style="font-size:19px; font-weight:700; color:#f5f2f1; margin-top:4px;">{tile.value}</div>
+                </div>
+              ))}
+            </div>
+            <p id="stat-summary" style="font-size:13px; color:#a79fa0; line-height:1.6; margin:18px 0 0;">{content.summary}</p>
+          </div>
+        </div>
+
+        <div style="margin-top:24px;">
+          <h2 style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+            Understanding the <span translate="no">{base}/{target}</span> rate
+          </h2>
+          <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:16px;">
+            {content.contextCards.map((card) => (
+              <div style={`${cardBg} border-radius:14px; padding:20px 22px;`}>
+                <h3 style="margin:0 0 8px; font-size:15px; color:#f5f2f1;">{card.title}</h3>
+                <p style="margin:0; font-size:14px; line-height:1.6; color:#a79fa0;">{card.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div id="faq" style="margin-top:24px; margin-bottom:8px;">
+          <h2 style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+            <span translate="no">{base}</span> to <span translate="no">{target}</span> FAQ
+          </h2>
+          <div style={`${cardBg} border-radius:16px; padding:6px 28px;`}>
+            {content.faqs.map((item, i) => (
+              <div style={`padding:18px 0; ${i < content.faqs.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>
+                <div style="font-size:15px; font-weight:600; color:#f5f2f1; margin-bottom:6px;">{item.question}</div>
+                <div style="font-size:14px; line-height:1.6; color:#a79fa0;">{item.answer}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {menu.activeHeaderLinks.length > 0 && (
+          <div style="margin-top:24px;">
+            <h2 style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+              More <span translate="no">{base}</span> pairs
+            </h2>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px;">
+              {menu.activeHeaderLinks.map((link) => (
+                <a
+                  href={link.href}
+                  translate="no"
+                  style={`display:block; border:1px solid ${link.active ? "#e11d3f" : "#2a2426"}; border-radius:10px; background:#151315; color:${link.active ? "#ff4d6d" : "#e4dfdc"}; font-size:13px; font-weight:600; padding:11px 14px; text-align:center;`}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <Footer menu={menu} />
+    <BackToTop />
+  </div>
+
+  <style>
+    /* The active state of every tab is written as an inline style (the server
+       renders it, the script updates it), so hover has to out-rank inline —
+       hence !important, kept off the active pill so it can't fight the
+       selection. */
+    .tool-tab,
+    .range-tab,
+    .table-tab,
+    .pair-picker-btn,
+    .pair-picker-panel a,
+    .pair-cta {
+      transition:
+        background-color 0.18s ease,
+        color 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease,
+        opacity 0.18s ease;
+    }
+    .tool-tab[data-active='false']:hover,
+    .range-tab[data-active='false']:not(:disabled):hover {
+      background: rgba(20, 16, 15, 0.06) !important;
+      color: #14100f !important;
+    }
+    .table-tab[data-active='false']:hover {
+      background: rgba(255, 255, 255, 0.07) !important;
+      color: #e4dfdc !important;
+    }
+    .pair-picker-btn:hover,
+    .pair-picker-btn[data-open='true'] {
+      border-color: #c9c2bd;
+      box-shadow: 0 2px 8px rgba(20, 16, 15, 0.06);
+    }
+    .pair-picker-panel a:hover {
+      background: #f4f1ee !important;
+    }
+    .pair-cta:hover {
+      box-shadow: 0 6px 18px rgba(225, 29, 63, 0.28);
+    }
+
+    /* Dropdowns fade and settle instead of appearing in place. `display` is
+       toggled by the script a frame before/after the class, so the panel is
+       laid out when the transition starts and hidden once it ends. */
+    .pair-picker-panel {
+      opacity: 0;
+      transform: translateY(-6px);
+      transition:
+        opacity 0.16s ease,
+        transform 0.16s ease;
+    }
+    .pair-picker-panel[data-open='true'] {
+      opacity: 1;
+      transform: none;
+    }
+
+    /* Cross-fade for anything the range tabs redraw: the chart itself and the
+       stat tiles that follow it. */
+    .pair-table,
+    #chart-line,
+    #chart-area,
+    #chart-axis,
+    #chart-x,
+    #stat-high,
+    #stat-low,
+    #stat-average,
+    #stat-points {
+      transition: opacity 0.18s ease;
+    }
+    #brush-left,
+    #brush-right {
+      transition: width 0.22s ease;
+    }
+    #chart-dot,
+    #chart-tip,
+    #chart-cursor {
+      transition: opacity 0.12s ease;
+    }
+
+    /* Smooth scrolling for the tool tabs, with room under the sticky-free
+       header so a jumped-to card isn't flush against the viewport edge. */
+    :global(html) {
+      scroll-behavior: smooth;
+    }
+    #chart-card,
+    #converter-table,
+    #stats-card,
+    #faq {
+      scroll-margin-top: 24px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      :global(html) {
+        scroll-behavior: auto;
+      }
+      .tool-tab,
+      .range-tab,
+      .table-tab,
+      .pair-picker-btn,
+      .pair-picker-panel,
+      .pair-picker-panel a,
+      .pair-cta,
+      .pair-table,
+      #chart-line,
+      #chart-area,
+      #chart-axis,
+      #chart-x,
+      #brush-left,
+      #brush-right,
+      #chart-dot,
+      #chart-tip,
+      #chart-cursor,
+      #stat-high,
+      #stat-low,
+      #stat-average,
+      #stat-points {
+        transition: none;
+      }
+    }
+  </style>
+
+  <script define:vars={{ series, defaultRange, base, target, pairLabel: `${base}/${target}` }}>
+    (function () {
+      const reduceMotion = typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // Fading something in from `display:none` needs the element laid out
+      // for a frame first, or the browser has no start value to animate from.
+      function fadeIn(element, display) {
+        element.style.display = display;
+        if (reduceMotion) { element.style.opacity = "1"; return; }
+        element.style.opacity = "0";
+        requestAnimationFrame(() => { element.style.opacity = "1"; });
+      }
+
+      const pickerButtons = Array.from(document.querySelectorAll(".pair-picker-btn"));
+      const pickerPanels = Array.from(document.querySelectorAll(".pair-picker-panel"));
+      const panelTimers = new Map();
+
+      function closePanels() {
+        pickerPanels.forEach((panel) => {
+          if (panel.dataset.open !== "true") return;
+          panel.dataset.open = "false";
+          const button = pickerButtons.find((b) => b.dataset.side === panel.dataset.side);
+          if (button) button.dataset.open = "false";
+          // Keep it laid out until the fade finishes, then take it out of flow.
+          clearTimeout(panelTimers.get(panel));
+          panelTimers.set(panel, setTimeout(() => { panel.style.display = "none"; }, reduceMotion ? 0 : 160));
+        });
+      }
+
+      pickerButtons.forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const panel = pickerPanels.find((p) => p.dataset.side === button.dataset.side);
+          const wasOpen = panel.dataset.open === "true";
+          closePanels();
+          if (wasOpen) return;
+          clearTimeout(panelTimers.get(panel));
+          panel.style.display = "block";
+          button.dataset.open = "true";
+          requestAnimationFrame(() => { panel.dataset.open = "true"; });
+        });
+      });
+      document.addEventListener("click", closePanels);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closePanels();
+      });
+
+      const tableTabs = Array.from(document.querySelectorAll(".table-tab"));
+      tableTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          if (tab.dataset.active === "true") return;
+          tableTabs.forEach((other) => {
+            const active = other === tab;
+            other.dataset.active = active ? "true" : "false";
+            other.style.background = active ? "#e11d3f" : "transparent";
+            other.style.color = active ? "#fff" : "#a79fa0";
+            other.style.fontWeight = active ? "700" : "600";
+          });
+          document.querySelectorAll("[data-table-body]").forEach((table) => {
+            if (table.dataset.tableBody === tab.dataset.table) {
+              fadeIn(table, "table");
+            } else {
+              table.style.display = "none";
+            }
+          });
+        });
+      });
+
+      // The tool tabs jump to the sections below (smooth-scrolled by CSS), so
+      // the highlighted pill tracks whichever card is in view rather than the
+      // last one clicked.
+      const toolTabs = Array.from(document.querySelectorAll(".tool-tab"));
+      const toolSections = toolTabs
+        .map((tab) => document.getElementById(tab.dataset.target))
+        .filter(Boolean);
+      if (toolSections.length && "IntersectionObserver" in window) {
+        const visible = new Set();
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) visible.add(entry.target.id);
+            else visible.delete(entry.target.id);
+          }
+          const current = toolSections.find((section) => visible.has(section.id));
+          if (!current) return;
+          toolTabs.forEach((tab) => {
+            const active = tab.dataset.target === current.id;
+            tab.dataset.active = active ? "true" : "false";
+            tab.style.background = active ? "#14100f" : "transparent";
+            tab.style.color = active ? "#fff" : "#3a332f";
+            tab.style.fontWeight = active ? "700" : "600";
+          });
+        }, { rootMargin: "-20% 0px -60% 0px", threshold: 0 });
+        toolSections.forEach((section) => observer.observe(section));
+      }
+
+      const line = document.getElementById("chart-line");
+      if (!line || series.length < 2) return;
+
+      const area = document.getElementById("chart-area");
+      const wrap = document.getElementById("chart-wrap");
+      const cursor = document.getElementById("chart-cursor");
+      const dot = document.getElementById("chart-dot");
+      const tip = document.getElementById("chart-tip");
+      const axis = document.getElementById("chart-axis");
+      const xLabels = document.getElementById("chart-x");
+      const brushArea = document.getElementById("brush-area");
+      const brushLeft = document.getElementById("brush-left");
+      const brushRight = document.getElementById("brush-right");
+      const rangeTabs = Array.from(document.querySelectorAll(".range-tab"));
+      const W = 1100;
+      const H = 260;
+      const PAD = 18;
+
+      function formatRate(value) {
+        const num = Number(value);
+        const abs = Math.abs(num);
+        if (num === 0) return "0";
+        if (abs < 1) return String(num.toFixed(8)).replace(/0+$/, "").replace(/\.$/, "");
+        if (abs < 1000) return String(num.toFixed(6)).replace(/0+$/, "").replace(/\.$/, "");
+        return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      const spanSeconds = series[series.length - 1][0] - series[0][0];
+
+      // Under a couple of days the date alone repeats on every label, so the
+      // clock is what distinguishes the points. The window on display decides
+      // that, not the whole stored history — a 12H view inside a month of data
+      // would otherwise label three points with the same two dates.
+      function formatDate(ts, windowSeconds) {
+        const date = new Date(ts * 1000);
+        const options = (windowSeconds ?? spanSeconds) <= 2 * 24 * 3600
+          ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+          : { year: "numeric", month: "short", day: "numeric" };
+        return date.toLocaleString("en-US", { ...options, timeZone: "UTC" }) + " UTC";
+      }
+
+      function windowed(seconds) {
+        const newest = series[series.length - 1][0];
+        const picked = series.filter((point) => point[0] >= newest - seconds);
+        return picked.length >= 2 ? picked : series;
+      }
+
+      function scale(points) {
+        const values = points.map((point) => point[1]);
+        const low = Math.min(...values);
+        const high = Math.max(...values);
+        const span = high - low || Math.abs(high) || 1;
+        const step = points.length > 1 ? W / (points.length - 1) : W;
+        return {
+          low, high, span,
+          xy: (point, i) => [i * step, PAD + (1 - (point[1] - low) / span) * (H - PAD * 2)],
+        };
+      }
+
+      let current = { points: [], scaled: null };
+
+      function render(seconds, key) {
+        const points = windowed(seconds);
+        const s = scale(points);
+        const coords = points.map((point, i) => s.xy(point, i));
+        const path = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+        line.setAttribute("points", path);
+        area.setAttribute("points", `0,${H} ${path} ${W},${H}`);
+        current = { points, scaled: s, coords, span: points[points.length - 1][0] - points[0][0] };
+
+        // Y axis: five ticks matching the grid lines drawn in the SVG.
+        const ticks = [20, 80, 140, 200, 240];
+        axis.innerHTML = ticks.map((y) => {
+          const value = s.low + (1 - (y - PAD) / (H - PAD * 2)) * s.span;
+          return `<div style="position:absolute; top:${(y / H) * 100}%; left:8px; transform:translateY(-50%);">${formatRate(value)}</div>`;
+        }).join("");
+
+        const first = points[0];
+        const last = points[points.length - 1];
+        const middle = points[Math.floor(points.length / 2)];
+        xLabels.innerHTML = [first, middle, last]
+          .map((point) => `<span>${formatDate(point[0], current.span)}</span>`)
+          .join("");
+
+        const values = points.map((point) => point[1]);
+        const high = Math.max(...values);
+        const low = Math.min(...values);
+        const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+        const changePct = values[0] ? ((values[values.length - 1] - values[0]) / values[0]) * 100 : 0;
+        const rangePct = average ? ((high - low) / average) * 100 : 0;
+        document.getElementById("stat-high").textContent = formatRate(high);
+        document.getElementById("stat-low").textContent = formatRate(low);
+        document.getElementById("stat-average").textContent = formatRate(average);
+        document.getElementById("stat-points").textContent = String(values.length);
+        document.querySelectorAll(".stat-range").forEach((el) => { el.textContent = key; });
+        const changeValue = document.getElementById("change-value");
+        changeValue.textContent = `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`;
+        changeValue.style.color = changePct > 0.01 ? "#16a34a" : changePct < -0.01 ? "#e11d3f" : "#8b857f";
+        document.getElementById("change-range").textContent = `(${key})`;
+        const trend = changePct > 0.01 ? "has moved higher" : changePct < -0.01 ? "has moved lower" : "has stayed inside a narrow range";
+        document.getElementById("stat-summary").textContent =
+          `${pairLabel} ${trend} over the selected ${key} window. The observed range is about ${rangePct.toFixed(2)}% `
+          + `between the high and low, across ${values.length} stored update points.`;
+
+        // Overview strip: the whole stored history, with the part outside the
+        // selected window dimmed so the tab choice is visible as a selection.
+        const all = scale(series);
+        const allPath = series.map((point, i) => {
+          const [x, y] = all.xy(point, i);
+          return `${x.toFixed(1)},${((y / H) * 56).toFixed(1)}`;
+        }).join(" ");
+        brushArea.setAttribute("points", `0,56 ${allPath} ${W},56`);
+        const startFraction = spanSeconds ? (points[0][0] - series[0][0]) / spanSeconds : 0;
+        brushLeft.style.width = `${Math.max(0, Math.min(1, startFraction)) * 100}%`;
+        brushRight.style.width = "0%";
+
+        rangeTabs.forEach((tab) => {
+          const active = tab.dataset.range === key;
+          tab.dataset.active = active ? "true" : "false";
+          tab.style.background = active ? "#e11d3f" : "transparent";
+          tab.style.color = active ? "#fff" : tab.disabled ? "#c9c2bd" : "#6b6560";
+          tab.style.fontWeight = active ? "700" : "600";
+        });
+
+        // A redraw is instantaneous, which makes a range switch look like
+        // nothing happened on a pair whose line barely moves. Bringing the
+        // repainted parts back up from dimmed marks the change without a
+        // blink of empty chart.
+        if (!reduceMotion) {
+          const repainted = [line, area, axis, xLabels,
+            document.getElementById("stat-high"), document.getElementById("stat-low"),
+            document.getElementById("stat-average"), document.getElementById("stat-points")];
+          repainted.forEach((element) => { element.style.opacity = "0.35"; });
+          requestAnimationFrame(() => {
+            repainted.forEach((element) => { element.style.opacity = "1"; });
+          });
+        }
+      }
+
+      rangeTabs.forEach((tab) => {
+        if (tab.disabled) return;
+        tab.addEventListener("click", () => render(Number(tab.dataset.seconds), tab.dataset.range));
+      });
+
+      const maxButton = document.getElementById("range-max");
+      if (maxButton) {
+        maxButton.addEventListener("click", () => {
+          const enabled = rangeTabs.filter((tab) => !tab.disabled);
+          const widest = enabled[enabled.length - 1];
+          if (widest) {
+            render(Number(widest.dataset.seconds), widest.dataset.range);
+            document.getElementById("chart-card").scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      }
+
+      // The readout fades out on leave rather than vanishing, so a pointer
+      // crossing the chart doesn't flicker. Re-entering cancels the pending
+      // hide before it can pull the elements back out of flow.
+      let hideTimer = null;
+      function showCursor() {
+        clearTimeout(hideTimer);
+        [cursor, dot, tip].forEach((element) => {
+          element.style.display = element === dot || element === tip ? "block" : "";
+          element.style.opacity = "1";
+        });
+      }
+      function hideCursor() {
+        [cursor, dot, tip].forEach((element) => { element.style.opacity = "0"; });
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          [cursor, dot, tip].forEach((element) => { element.style.display = "none"; });
+        }, reduceMotion ? 0 : 120);
+      }
+
+      wrap.addEventListener("mousemove", (event) => {
+        if (!current.coords || !current.coords.length) return;
+        const box = wrap.getBoundingClientRect();
+        const plotWidth = box.width - 66;
+        const fraction = Math.max(0, Math.min(1, (event.clientX - box.left) / plotWidth));
+        const index = Math.round(fraction * (current.points.length - 1));
+        const point = current.points[index];
+        const [, y] = current.coords[index];
+        const left = (index / (current.points.length - 1 || 1)) * plotWidth;
+        const top = (y / H) * box.height;
+        showCursor();
+        cursor.setAttribute("x1", String((index / (current.points.length - 1 || 1)) * W));
+        cursor.setAttribute("x2", String((index / (current.points.length - 1 || 1)) * W));
+        dot.style.left = `${left}px`;
+        dot.style.top = `${top}px`;
+        tip.style.left = `${Math.max(60, Math.min(plotWidth - 60, left))}px`;
+        tip.style.top = `${top}px`;
+        tip.innerHTML = `<strong>1 ${base} = ${formatRate(point[1])} ${target}</strong><br>${formatDate(point[0], current.span)}`;
+      });
+      wrap.addEventListener("mouseleave", hideCursor);
+
+      const initial = rangeTabs.find((tab) => tab.dataset.range === defaultRange) ?? rangeTabs[rangeTabs.length - 1];
+      render(Number(initial.dataset.seconds), initial.dataset.range);
+    })();
+  </script>
+</Layout>

@@ -1,0 +1,30 @@
+{
+  "pairs": [
+    "eur_usd",
+    "gbp_usd",
+    "jpy_usd",
+    "cny_usd",
+    "krw_usd",
+    "sgd_usd",
+    "thb_usd",
+    "vnd_usd",
+    "aud_usd",
+    "cad_usd",
+    "chf_usd",
+    "hkd_usd",
+    "inr_usd",
+    "idr_usd",
+    "myr_usd",
+    "php_usd",
+    "twd_usd",
+    "nzd_usd",
+    "aed_usd",
+    "sar_usd",
+    "sek_usd",
+    "nok_usd",
+    "dkk_usd",
+    "mxn_usd",
+    "brl_usd",
+    "zar_usd"
+  ]
+}

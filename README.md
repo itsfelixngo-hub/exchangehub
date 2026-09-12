@@ -232,11 +232,14 @@ git push origin main
 -> writes production .env from GitHub Secrets
 -> builds a new Docker image locally
 -> starts the new web container on 127.0.0.1:5001 or 127.0.0.1:5002
--> checks /healthz
+-> checks /healthz, then warms it with a real page request
 -> switches Nginx upstream and reloads Nginx
--> removes the old web container
+-> removes the old web container, and any container of the other stack
 -> restarts exactly one fetcher container
+-> prints /healthz so the job log records which build went live
 ```
+
+Which app the web container runs is the `WEB_STACK` variable below.
 
 GitHub repository secrets:
 
@@ -246,8 +249,50 @@ APP_NAME            # optional, defaults to exchangehub
 BLUE_PORT           # optional, defaults to 5001
 GREEN_PORT          # optional, defaults to 5002
 NGINX_UPSTREAM_CONF # optional, defaults to /etc/nginx/conf.d/exchangehub-upstream.conf
-PROD_ENV            # full production .env content
+PROD_ENV            # full production .env content, shared by both stacks
 ```
+
+GitHub repository **variables** (Settings → Secrets and variables → Actions →
+Variables — not secrets, so the current value is visible in the UI):
+
+```text
+WEB_STACK           # 'astro' (default) or 'flask'
+```
+
+### Which app is serving
+
+`WEB_STACK` decides what nginx proxies to:
+
+- `astro` — the site in `astro-web/`. `deploy_blue_green.sh` runs with
+  `DEPLOY_WEB=false` (mailserver and fetcher only), then `deploy_astro.sh`
+  deploys the web tier and removes the superseded Flask web containers.
+- `flask` — the rollback. `deploy_blue_green.sh` runs as it always did, and
+  removes the Astro containers after nginx has moved.
+
+Both directions are ordinary blue/green switches: the new container is
+health-checked and warmed on the idle port *before* nginx moves, and the old
+one is removed only after. So flipping the variable and re-running Deploy
+(`workflow_dispatch`, no commit needed) is safe in either direction.
+
+Both stacks read the same `PROD_ENV` secret — the Astro app walks up from its
+working directory to the repo-root `.env` — so the cutover needs no new secret.
+
+`/healthz` says which one actually answered. The version is baked into each
+image, so it reports the container's own identity rather than a config value:
+
+```console
+$ curl -s https://ratehubfx.com/healthz
+{"ok":true,"service":"exchangehub","version":2,"stack":"astro","build":"b11ec1a","color":"green"}
+```
+
+| Field     | Meaning                                                    |
+| :-------- | :--------------------------------------------------------- |
+| `version` | `1` = the Flask app, `2` = the Astro app                    |
+| `stack`   | the same answer in words                                    |
+| `build`   | git short SHA the image was built from                      |
+| `color`   | which half of the blue/green pair this container is         |
+
+`ok` and `service` are unchanged, so anything already polling them still works.
 
 Example `PROD_ENV`:
 

@@ -1,0 +1,72 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "./Header.astro";
+import Footer from "./Footer.astro";
+import BackToTop from "./BackToTop.astro";
+import { buildMenuModel } from "../lib/menu";
+import { buildPairMovers } from "../lib/home";
+import { resolveVisitorLocale } from "../lib/geo";
+import { CONTACT_EMAIL, INFO_PAGES, type InfoSlug } from "../lib/info";
+
+interface Props {
+  slug: InfoSlug;
+}
+
+const { slug } = Astro.props;
+const page = INFO_PAGES[slug];
+const menu = buildMenuModel();
+const pairMovers = await buildPairMovers();
+const locale = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_lang")?.value);
+
+// The contact address is prose in the source copy; make it clickable where it
+// appears rather than keeping a second, hand-written copy of the sentence.
+function splitAroundEmail(text: string): [string, string] | null {
+  const at = text.indexOf(CONTACT_EMAIL);
+  if (at === -1) return null;
+  return [text.slice(0, at), text.slice(at + CONTACT_EMAIL.length)];
+}
+---
+
+<Layout
+  title={page.title}
+  description={page.description}
+  path={`/${slug}`}
+  breadcrumbName={page.heading}
+>
+  <div>
+    <Header pairMovers={pairMovers} active={slug === "about" ? "Analysis" : "none"} autoLang={locale.lang} />
+
+    <div style="background:#0c0b0d; padding:56px 40px 80px; font-family:'Manrope', Arial, sans-serif;">
+      <div style="max-width:760px; margin:0 auto;">
+        <span style="display:inline-block; background:rgba(225,29,63,0.14); border:1px solid rgba(225,29,63,0.4); color:#ff4d6d; font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:6px 12px; border-radius:999px; margin-bottom:18px;">
+          {page.eyebrow}
+        </span>
+        <h1 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; color:#f5f2f1; margin:0 0 32px; line-height:1.15;">{page.heading}</h1>
+
+        {page.sections.map((section, index) => (
+          <div style={`margin-bottom:${index === page.sections.length - 1 ? "8px" : "32px"};`}>
+            <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:19px; color:#f5f2f1; margin:0 0 6px;">{section.heading}</h2>
+            <div style="width:26px; height:2px; background:#e11d3f; margin-bottom:14px;"></div>
+            {section.body.map((paragraph, paragraphIndex) => {
+              const parts = splitAroundEmail(paragraph);
+              const style = `font-size:15.5px; line-height:1.75; color:#a79fa0; margin:0 0 ${paragraphIndex === section.body.length - 1 ? "0" : "14px"};`;
+              return parts ? (
+                <p style={style}>
+                  {parts[0]}
+                  <a href={`mailto:${CONTACT_EMAIL}`} style="color:#ff4d6d;">{CONTACT_EMAIL}</a>
+                  {parts[1]}
+                </p>
+              ) : (
+                <p style={style}>{paragraph}</p>
+              );
+            })}
+          </div>
+        ))}
+        <slot />
+      </div>
+    </div>
+
+    <Footer menu={menu} secondary="company" />
+    <BackToTop />
+  </div>
+</Layout>

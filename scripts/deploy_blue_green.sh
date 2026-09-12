@@ -215,7 +215,18 @@ for attempt in $(seq 1 "$MAIL_HEALTH_RETRIES"); do
   sleep "$MAIL_HEALTH_SLEEP"
 done
 
-docker build -t "$image" .
+docker build --build-arg APP_BUILD="$IMAGE_TAG" -t "$image" .
+
+# DEPLOY_WEB=false leaves the web tier alone and deploys only the mailserver
+# and the fetcher. That is how this script is called when the site is served by
+# the Astro app: scripts/deploy_astro.sh owns the blue/green ports, the nginx
+# upstream and the active-colour file, and running the gunicorn container as
+# well would take one of those ports and fight it for the upstream. The image
+# is still built above, because the fetcher runs from it.
+if [[ "${DEPLOY_WEB:-true}" != "true" ]]; then
+  echo "DEPLOY_WEB=false: skipping the Flask web tier, deploying fetcher only."
+else
+
 docker rm -f "$new_container" >/dev/null 2>&1 || true
 
 docker run -d \
@@ -224,6 +235,7 @@ docker run -d \
   --network "$NETWORK_NAME" \
   --env-file .env \
   -e FLASK_ENV=production \
+  -e APP_COLOR="$new_color" \
   -e CONTACT_SMTP_HOST="$CONTACT_SMTP_HOST_VALUE" \
   -e CONTACT_SMTP_PORT="$CONTACT_SMTP_PORT_VALUE" \
   -p "127.0.0.1:${new_port}:5000" \
@@ -285,6 +297,18 @@ printf "%s" "$new_color" > "$ACTIVE_FILE"
 
 docker rm -f "$old_container" >/dev/null 2>&1 || true
 
+# Rolling back from the Astro stack: traffic is on gunicorn again, so the
+# Astro containers are dead weight holding the other blue/green port. Empty by
+# default — only the rollback path in the Deploy workflow passes this.
+for superseded in ${SUPERSEDED_WEB_CONTAINERS:-}; do
+  if docker inspect "$superseded" >/dev/null 2>&1; then
+    echo "Stopping superseded container: $superseded"
+    docker rm -f "$superseded" >/dev/null 2>&1 || true
+  fi
+done
+
+fi  # DEPLOY_WEB
+
 docker rm -f "$fetcher_container" >/dev/null 2>&1 || true
 mkdir -p "$STATE_DIR"
 docker run -d \
@@ -300,5 +324,10 @@ docker run -d \
 
 docker image prune -f >/dev/null 2>&1 || true
 
-echo "Deployed $image to $new_container on 127.0.0.1:$new_port"
-echo "Nginx now proxies to $new_color. Fetcher is single-instance: $fetcher_container"
+if [[ "${DEPLOY_WEB:-true}" == "true" ]]; then
+  echo "Deployed $image to $new_container on 127.0.0.1:$new_port"
+  echo "Nginx now proxies to $new_color. Fetcher is single-instance: $fetcher_container"
+else
+  echo "Deployed $image. Fetcher is single-instance: $fetcher_container"
+  echo "Web tier not touched (DEPLOY_WEB=false)."
+fi

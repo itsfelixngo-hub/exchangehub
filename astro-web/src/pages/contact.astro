@@ -1,0 +1,57 @@
+---
+export const prerender = false;
+
+import InfoPage from "../components/InfoPage.astro";
+import ContactForm from "../components/ContactForm.astro";
+import {
+  CHALLENGE_COOKIE, CHALLENGE_MAX_AGE_SECONDS, EMPTY_VALUES, clientIp, isRateLimited,
+  markSubmitted, newChallenge, openChallenge, sealChallenge, sendContactEmail, validateSubmission,
+  type ContactValues,
+} from "../lib/contact";
+import { isSecureRequest } from "../lib/site";
+
+let values: ContactValues = { ...EMPTY_VALUES };
+let errors: string[] = [];
+let success = false;
+
+if (Astro.request.method === "POST") {
+  const posted = openChallenge(Astro.cookies.get(CHALLENGE_COOKIE)?.value);
+  const submission = validateSubmission(await Astro.request.formData(), posted);
+  errors = submission.errors;
+  values = submission.values;
+
+  const ip = clientIp(Astro.request, Astro.clientAddress);
+  if (!errors.length && isRateLimited(ip)) errors.push("Please wait before sending another message.");
+
+  if (!errors.length) {
+    try {
+      await sendContactEmail(values, { ip, pageUrl: Astro.url.href });
+      markSubmitted(ip);
+      values = { ...EMPTY_VALUES };
+      success = true;
+    } catch (error) {
+      console.error("Contact form mail delivery failed", error);
+      errors.push("Mail delivery is not configured yet. Please try again later.");
+    }
+  }
+}
+
+// Every render — first visit, rejected submission, or a sent message — hands
+// out a fresh challenge, so the form on screen is always the one the next
+// POST is checked against (a reused token would let one solve be replayed).
+const challenge = newChallenge();
+Astro.cookies.set(CHALLENGE_COOKIE, sealChallenge(challenge), {
+  path: "/",
+  httpOnly: true,
+  sameSite: "lax",
+  // nginx terminates TLS, so the request this process sees is plain HTTP —
+  // reading Astro.url.protocol here meant the cookie never carried Secure on
+  // a site that is HTTPS-only.
+  secure: isSecureRequest(Astro.request, Astro.url),
+  maxAge: CHALLENGE_MAX_AGE_SECONDS,
+});
+---
+
+<InfoPage slug="contact">
+  <ContactForm values={values} errors={errors} success={success} challenge={challenge} />
+</InfoPage>

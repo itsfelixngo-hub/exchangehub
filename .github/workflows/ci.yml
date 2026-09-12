@@ -50,14 +50,71 @@ jobs:
       - name: Validate deployment shell scripts
         run: bash -n scripts/*.sh fetch_entrypoint.sh modules/exchange_rates/*.sh
 
-  docker:
+  # The Astro app in astro-web/ is what nginx serves; the Flask job above still
+  # covers the fetcher and the scripts. Independent of `test`, so a break in
+  # either stack is reported on its own rather than hidden behind the other.
+  astro:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: test
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Matches the engines field in astro-web/package.json and the base
+          # image in astro-web/Dockerfile; Astro 7 refuses to run on Node 20.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: astro-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: astro-web
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: astro-web
+        run: npm run check
+
+      - name: Build
+        working-directory: astro-web
+        run: npm run build
+
+      # Boots the built server against fixture rate files and asserts on the
+      # routes, the canonical URLs, the cache headers and the contact form.
+      # No credentials needed: R2 is off and the fixtures are written to a
+      # temp directory by the script itself.
+      - name: Smoke test
+        working-directory: astro-web
+        run: npm run smoke
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [test, astro]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Flask image
         run: docker build --tag exchangehub:ci .
+
+      - name: Build Astro image
+        run: docker build --tag exchangehub-astro:ci ./astro-web
+
+      # Proves the runtime stage can actually serve, not just that it built —
+      # a missing production dependency only shows up when the server starts.
+      - name: Run Astro image
+        run: |
+          docker run -d --name astro-ci -p 127.0.0.1:4321:4321 \
+            -e R2_ENABLED=false -e SITE_URL=https://ci.example \
+            exchangehub-astro:ci
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:4321/healthz && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4321/healthz | grep -q '"version":2'
+          docker rm -f astro-ci

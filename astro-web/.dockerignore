@@ -1,0 +1,16 @@
+node_modules
+dist
+.astro
+.git
+.env
+.env.*
+!.env.sample
+.vscode
+.idea
+*.log
+smtp.log
+# Saved page dumps and scratch files, not part of the app.
+page.html
+res.html
+j2
+jz
