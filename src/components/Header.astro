@@ -35,18 +35,18 @@ const navLinks: { label: string; href: string }[] = [
 ---
 
 <div style="background:#0f0e0d;">
-  <div style="max-width:1240px; margin:0 auto; padding:10px 40px; display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); font-family:'Source Sans 3', Arial, sans-serif; font-size:12px; color:rgba(255,255,255,0.55); letter-spacing:.03em;">
+  <div class="page-pad hdr-meta" style="max-width:1240px; margin:0 auto; padding:10px 40px; display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); font-family:'Source Sans 3', Arial, sans-serif; font-size:12px; color:rgba(255,255,255,0.55); letter-spacing:.03em;">
     <span id="local-date"></span>
     <span id="local-clock"></span>
   </div>
   <div style="border-top:1px solid #0f0e0d; border-bottom:1px solid #0f0e0d; background:#0f0e0d;">
-    <div style="max-width:1240px; margin:0 auto; padding:0 40px; display:flex; align-items:center; justify-content:space-between; gap:24px; height:64px; font-family:'Source Sans 3', Arial, sans-serif;">
-      <div style="display:flex; align-items:center; flex:0 0 auto;">
+    <div class="page-pad hdr-main" style="max-width:1240px; margin:0 auto; padding:0 40px; display:flex; align-items:center; justify-content:space-between; gap:24px; height:64px; font-family:'Source Sans 3', Arial, sans-serif;">
+      <div class="hdr-logo" style="display:flex; align-items:center; flex:0 0 auto;">
         <a href="/" style="display:inline-flex; align-items:center;">
           <img src="/ratehub-2b-icon.png" alt="ExchangeHub" style="height:30px; width:auto; display:block;" />
         </a>
       </div>
-      <div style="display:flex; align-items:center; gap:32px;">
+      <div class="hdr-nav" style="display:flex; align-items:center; gap:32px;">
         {navLinks.map((link) => (
           <a
             href={link.href}
@@ -74,21 +74,49 @@ const navLinks: { label: string; href: string }[] = [
                 data-flag={lang.flag}
                 style="display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; border-radius:8px; padding:7px 8px; color:#1a1614; cursor:pointer; text-align:left; font-size:13px;"
               >
-                <img src={lang.flag} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" />
+                <img src={lang.flag} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
                 {lang.label}
               </button>
             ))}
           </div>
           <div id="google_translate_element" style="position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none;"></div>
         </div>
+        <button
+          type="button"
+          id="nav-toggle"
+          class="hdr-menu"
+          aria-label="Open menu"
+          aria-expanded="false"
+          aria-controls="nav-drawer"
+          style="display:none; width:44px; height:44px; margin-right:-10px; border-radius:999px; background:transparent; border:none; align-items:center; justify-content:center; cursor:pointer;"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
       </div>
+    </div>
+    <!-- Only ever shown below the tablet breakpoint, where the bar has
+         dropped some or all of the destinations. -->
+    <div
+      id="nav-drawer"
+      class="hdr-drawer page-pad"
+      data-open="false"
+      style="display:none; flex-direction:column; max-width:1240px; margin:0 auto; padding:6px 40px 14px; font-family:'Source Sans 3', Arial, sans-serif;"
+    >
+      {navLinks.map((link) => (
+        <a
+          href={link.href}
+          style={`display:flex; align-items:center; min-height:48px; border-bottom:1px solid rgba(255,255,255,0.08); color:${link.label === active ? "#fff" : "rgba(255,255,255,0.7)"}; font-size:15px; font-weight:${link.label === active ? "600" : "400"};`}
+        >
+          {link.label}
+        </a>
+      ))}
     </div>
   </div>
   {tickerItems.length > 0 && (
     <div class="ticker-viewport" style="background:#c81324; overflow:hidden;">
       <div class="ticker-track" style="display:flex; width:max-content;">
         {[0, 1].map((pass) => (
-          <div style="display:flex; gap:36px; padding:9px 40px 9px 0; flex:0 0 auto;" aria-hidden={pass === 1 ? "true" : undefined}>
+          <div class="ticker-row" style="display:flex; gap:36px; padding:9px 40px 9px 0; flex:0 0 auto;" aria-hidden={pass === 1 ? "true" : undefined}>
             {tickerItems.map((item) => (
               <a translate="no" href={item.href} style="color:#fff; text-decoration:none; font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:600; white-space:nowrap;">
                 {item.label} {item.rate} {item.direction === "up" ? "▲" : item.direction === "down" ? "▼" : ""}{item.changeLabel}
@@ -162,6 +190,19 @@ const navLinks: { label: string; href: string }[] = [
   if (dateEl) dateEl.textContent = now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   if (clockEl) clockEl.textContent = "Updated at " + now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
+  // The drawer holds whichever destinations the bar dropped at this width.
+  // CSS decides whether the toggle exists at all, so no width check here.
+  const navToggle = document.getElementById("nav-toggle");
+  const navDrawer = document.getElementById("nav-drawer");
+  if (navToggle && navDrawer) {
+    navToggle.addEventListener("click", () => {
+      const open = navDrawer.dataset.open !== "true";
+      navDrawer.dataset.open = open ? "true" : "false";
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      navToggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    });
+  }
+
   const langToggle = document.querySelector(".translate-toggle");
   const langMenu = document.querySelector(".translate-menu") as HTMLElement | null;
   if (langToggle && langMenu) {
@@ -219,9 +260,25 @@ const navLinks: { label: string; href: string }[] = [
     if (flagEl && option.dataset.flag) flagEl.src = option.dataset.flag;
   }
 
+  // Layout.astro only asks for the CJK faces when the visitor arrives already
+  // on Chinese or Japanese, because requesting them takes the Google Fonts
+  // stylesheet from 26 KB to 932 KB for everyone. Picking either by hand is
+  // the other way in, so fetch them at that point. The next page load carries
+  // the link itself, since the choice is in the site_lang cookie by then.
+  function ensureCjkFonts(code: string) {
+    if (code !== "zh-CN" && code !== "ja") return;
+    if (document.getElementById("cjk-fonts")) return;
+    const link = document.createElement("link");
+    link.id = "cjk-fonts";
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap";
+    document.head.appendChild(link);
+  }
+
   function commit(code: string) {
     const option = document.querySelector<HTMLElement>(`.translate-option[data-lang="${code}"]`);
     if (option) updateToggleUi(option);
+    ensureCjkFonts(code);
     document.dispatchEvent(new CustomEvent("sitelang:change", { detail: { lang: code } }));
   }
 
@@ -259,6 +316,11 @@ const navLinks: { label: string; href: string }[] = [
       // English fallback below reloads, which needs the cookie already set.
       document.cookie = "site_lang=" + code + ";path=/;max-age=31536000;samesite=lax";
       if (pumpTimer) clearTimeout(pumpTimer);
+
+      // Start the font download now rather than in commit(), which only runs
+      // once Google's widget is ready — this way the face and the translation
+      // arrive together instead of one after the other.
+      ensureCjkFonts(code);
 
       if (code === "en") {
         desiredLang = null;

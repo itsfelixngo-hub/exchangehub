@@ -1,0 +1,417 @@
+/**
+ * Responsive layout for the whole site.
+ *
+ * Every page in this codebase is written with inline `style` attributes, and
+ * an inline style outranks any selector a stylesheet can write — so each rule
+ * below carries `!important` purely to reach the element at all. That is the
+ * cost of the inline-style house style; it is not a specificity fight with
+ * some other rule.
+ *
+ * Two breakpoints, matching the design canvas artboards:
+ *   <= 1024px  tablet   (834px artboard: two-column hero, 24px gutters)
+ *   <=  767px  mobile   (390px artboard: single column, 16px gutters)
+ *
+ * `.page-pad` is the shared gutter: it is on every max-width container in the
+ * site, so the two rules for it below reflow all of them at once. Everything
+ * else here is a layout that has to change shape rather than just narrow.
+ */
+
+/* ============================== TABLET ============================== */
+@media (max-width: 1024px) {
+  .page-pad {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+
+  /* Header --------------------------------------------------------- */
+  .hdr-main {
+    gap: 16px !important;
+  }
+  .hdr-nav {
+    gap: 22px !important;
+  }
+  /* The tablet artboard keeps the first three destinations and moves the
+     rest into the drawer, rather than letting five links crowd the logo. */
+  .hdr-nav > a:nth-child(n + 4) {
+    display: none !important;
+  }
+  .hdr-menu {
+    display: flex !important;
+  }
+  /* The drawer exists from this breakpoint down — it holds whichever
+     destinations the bar has dropped. */
+  .hdr-drawer[data-open='true'] {
+    display: flex !important;
+  }
+  .ticker-row {
+    padding-right: 24px !important;
+  }
+
+  /* Home ----------------------------------------------------------- */
+  .home-hero {
+    gap: 32px !important;
+    padding-top: 40px !important;
+    padding-bottom: 48px !important;
+  }
+  .home-hero h1 {
+    font-size: 38px !important;
+  }
+  .conv-card {
+    padding: 26px !important;
+  }
+  /* The picker is a third of the board's width at this size; the rows next
+     to it need the room more than the currency names do. */
+  .rates-picker {
+    width: 200px !important;
+    flex: 0 0 200px !important;
+  }
+  .rate-row {
+    padding: 16px 18px !important;
+  }
+  .rr-spark {
+    display: none !important;
+  }
+
+  /* Pair page ------------------------------------------------------ */
+  .pair-chart-card {
+    padding: 24px 22px 18px !important;
+  }
+  .pair-two-col {
+    gap: 18px !important;
+  }
+  .pair-card-pad {
+    padding: 22px 20px !important;
+  }
+
+  /* Footer --------------------------------------------------------- */
+  .footer-grid {
+    grid-template-columns: 1.3fr 1fr 1fr !important;
+    gap: 24px !important;
+  }
+  /* Three columns fit; the fourth wraps under the brand block, which is the
+     one column tall enough to sit beside it. */
+  .footer-grid > div:first-child {
+    grid-row: span 2;
+  }
+  .footer-logo {
+    height: 64px !important;
+  }
+}
+
+/* ============================== MOBILE ============================== */
+@media (max-width: 767px) {
+  .page-pad {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* Header --------------------------------------------------------- */
+  .hdr-meta {
+    font-size: 11px !important;
+    gap: 10px !important;
+  }
+  .hdr-meta > span {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+  .hdr-main {
+    height: 56px !important;
+    gap: 10px !important;
+  }
+  .hdr-nav {
+    display: none !important;
+  }
+  .hdr-logo img {
+    height: 24px !important;
+  }
+  .ticker-row {
+    gap: 22px !important;
+    padding-right: 16px !important;
+  }
+
+  /* Home: hero ----------------------------------------------------- */
+  .home-hero {
+    grid-template-columns: 1fr !important;
+    gap: 22px !important;
+    padding-top: 28px !important;
+    padding-bottom: 32px !important;
+  }
+  .home-hero h1 {
+    font-size: 30px !important;
+    line-height: 1.15 !important;
+  }
+  .home-hero p {
+    font-size: 15px !important;
+  }
+  .home-cta {
+    flex-direction: column !important;
+    align-self: stretch !important;
+  }
+  .home-cta > a {
+    justify-content: center !important;
+    height: 48px !important;
+  }
+  .hero-card {
+    padding: 20px !important;
+  }
+  .hero-rate {
+    font-size: 34px !important;
+  }
+
+  /* Home: converter ------------------------------------------------ */
+  .conv-card {
+    padding: 20px !important;
+  }
+  .conv-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .conv-side {
+    padding: 0 !important;
+    border-left: none !important;
+  }
+  /* Stacked, the divider between From and To is horizontal, and the swap
+     button leaves its absolute slot to sit in the flow between them (see
+     the `order` values — the button is a grid child for exactly this). */
+  .conv-side-to {
+    border-top: 1px solid #e6e1de !important;
+    padding-top: 14px !important;
+    order: 3 !important;
+  }
+  .conv-side-from {
+    order: 1 !important;
+    padding-bottom: 14px !important;
+  }
+  .conv-swap {
+    position: static !important;
+    order: 2 !important;
+    transform: none !important;
+    justify-self: center !important;
+    margin: -4px 0 !important;
+    z-index: 1 !important;
+  }
+  .conv-amount-wrap {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    font-size: 26px !important;
+  }
+  .conv-amount-wrap input {
+    font-size: 26px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .conv-result {
+    font-size: 26px !important;
+  }
+  /* Flag, code and chevron are enough to name the side here; the full
+     currency name pushes the amount off the row. */
+  .conv-name {
+    display: none !important;
+  }
+  .conv-panel {
+    width: 190px !important;
+  }
+  .conv-footer {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 14px !important;
+  }
+  .conv-footer > a {
+    justify-content: center !important;
+  }
+  .home-banner {
+    padding: 22px 20px !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .home-banner > div {
+    font-size: 18px !important;
+  }
+
+  /* Home: rate board ----------------------------------------------- */
+  .home-section-title {
+    font-size: 22px !important;
+  }
+  /* The 240px sidebar has nowhere to go beside the rows, so it becomes a
+     panel the base-currency bar opens and closes. */
+  .rates-split {
+    display: block !important;
+  }
+  .rates-bar {
+    cursor: pointer !important;
+    padding: 14px 16px !important;
+  }
+  .rates-picker {
+    display: none !important;
+    width: auto !important;
+    flex: none !important;
+    max-height: 300px !important;
+    border-right: none !important;
+    border-bottom: 1px solid #2a2426 !important;
+  }
+  .rates-picker[data-open='true'] {
+    display: flex !important;
+  }
+  .rate-row {
+    padding: 14px 16px !important;
+    gap: 10px !important;
+  }
+  .rr-code {
+    flex: 0 0 auto !important;
+    font-size: 15px !important;
+  }
+  .rr-rate {
+    flex: 1 1 auto !important;
+    text-align: left !important;
+    font-size: 15px !important;
+  }
+  .rr-change {
+    min-width: 0 !important;
+    margin-left: 0 !important;
+    font-size: 12px !important;
+    padding: 4px 9px !important;
+  }
+  .rr-gap {
+    display: none !important;
+  }
+  .rr-view {
+    padding: 0 14px !important;
+  }
+
+  /* Pair page ------------------------------------------------------ */
+  .pair-chart-card {
+    padding: 18px 16px 14px !important;
+    border-radius: 16px !important;
+  }
+  /* Four pills do not fit on one 390px line; they scroll sideways rather
+     than wrapping into a two-row block that pushes the chart down. */
+  .pair-tabs {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    max-width: 100% !important;
+    margin-bottom: 20px !important;
+    scrollbar-width: none;
+  }
+  .pair-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .pair-tabs > a {
+    flex: 0 0 auto !important;
+    padding: 9px 14px !important;
+  }
+  .pair-picker-row {
+    gap: 10px !important;
+  }
+  .pair-picker-field {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+  /* Reversing the pair is a link to another page, so it reads better as a
+     full-width row between the two fields than as a circle wedged beside
+     them at this width. */
+  .pair-swap {
+    order: 2 !important;
+    width: 100% !important;
+    border-radius: 10px !important;
+    height: 34px !important;
+    margin-bottom: 0 !important;
+  }
+  .pair-picker-field-from {
+    order: 1 !important;
+  }
+  .pair-picker-field-to {
+    order: 3 !important;
+  }
+  .pair-meta-row,
+  .pair-title-row {
+    gap: 10px !important;
+  }
+  .pair-actions {
+    width: 100% !important;
+  }
+  .pair-actions > * {
+    flex: 1 1 0 !important;
+    justify-content: center !important;
+  }
+  .pair-title-row h1 {
+    font-size: 19px !important;
+  }
+  /* The value axis keeps its own gutter; 66px of it is a sixth of the
+     screen here. */
+  #chart-wrap {
+    padding-right: 44px !important;
+  }
+  #chart {
+    height: 190px !important;
+  }
+  #chart-axis {
+    width: 40px !important;
+    height: 190px !important;
+  }
+  #chart-x {
+    padding-right: 44px !important;
+    font-size: 11px !important;
+  }
+  .pair-brush {
+    margin-right: 44px !important;
+  }
+  .pair-two-col,
+  .pair-context-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+  .pair-card-pad {
+    padding: 20px 18px !important;
+  }
+  .pair-section-title {
+    font-size: 18px !important;
+  }
+  .pair-table-tabs {
+    flex-wrap: wrap !important;
+  }
+  .pair-faq-card {
+    padding: 4px 18px !important;
+  }
+
+  /* Chart index / info pages --------------------------------------- */
+  .lead-title {
+    font-size: 28px !important;
+  }
+  .lead-body {
+    font-size: 15px !important;
+  }
+  .section-pad {
+    padding-top: 32px !important;
+    padding-bottom: 48px !important;
+  }
+
+  /* Contact form --------------------------------------------------- */
+  .contact-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .contact-card {
+    padding: 20px 18px !important;
+  }
+
+  /* Footer --------------------------------------------------------- */
+  .footer-grid {
+    grid-template-columns: 1fr !important;
+    gap: 26px !important;
+  }
+  .footer-grid > div:first-child {
+    grid-row: auto;
+  }
+  .footer-logo {
+    height: 58px !important;
+  }
+  .footer-pairs {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Back to top ---------------------------------------------------- */
+  #back-to-top {
+    right: 16px !important;
+    bottom: 16px !important;
+  }
+}

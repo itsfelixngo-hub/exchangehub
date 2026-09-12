@@ -1,5 +1,7 @@
 ---
 import { siteOrigin } from "../lib/site";
+import { resolveVisitorLocale } from "../lib/geo";
+import "../styles/responsive.css";
 
 interface Props {
   title: string;
@@ -11,6 +13,16 @@ interface Props {
 }
 
 const { title, description, path, breadcrumbName, extraSchemaNodes = [], ogImage } = Astro.props;
+
+// The CJK faces are only ever applied to Google-translated text — see the
+// html[lang^="zh"] / [lang^="ja"] rules in Header.astro — but asking for them
+// in the stylesheet costs every visitor dearly: Noto Sans SC and JP are split
+// into hundreds of unicode-range subsets, which takes the Google Fonts
+// stylesheet from 26 KB to 932 KB, and it is render-blocking. So they are
+// requested only for a visitor who is already on Chinese or Japanese; picking
+// either by hand injects the stylesheet at that point (Header.astro).
+const visitorLang = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_lang")?.value).lang;
+const needsCjkFonts = visitorLang === "zh-CN" || visitorLang === "ja";
 
 const siteBaseUrl = siteOrigin(Astro.request, Astro.url);
 const canonicalUrl = siteBaseUrl + path;
@@ -87,12 +99,23 @@ const schema = {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
     />
+    {needsCjkFonts && (
+      <link
+        id="cjk-fonts"
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
+      />
+    )}
     <script type="application/ld+json" set:html={JSON.stringify(schema)} />
     <style is:global>
       * { box-sizing: border-box; }
       body { margin: 0; font-family: 'Manrope', Arial, sans-serif; }
+      /* Nothing on the page is meant to scroll sideways; a single element
+         that overshoots the viewport would otherwise shrink the whole layout
+         on a phone (the visual viewport zooms out to fit it). */
+      html, body { overflow-x: hidden; max-width: 100%; }
       table { border-collapse: collapse; width: 100%; }
       a { text-decoration: none; color: inherit; }
       .picker-scroll { scrollbar-width: thin; scrollbar-color: #3a332f transparent; }

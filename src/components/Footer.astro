@@ -31,11 +31,11 @@ const bottomLinks = secondary === "company" ? [] : INFO_LINKS;
 ---
 
 <div style="border-top:1px solid #2a2426; background:#0c0b0d; font-family:'Manrope', Arial, sans-serif;">
-  <div style="max-width:1180px; margin:0 auto; padding:48px 40px 22px;">
-    <div style="display:grid; grid-template-columns:minmax(260px,1.25fr) repeat(3,minmax(180px,1fr)); gap:32px; align-items:start;">
+  <div class="page-pad" style="max-width:1180px; margin:0 auto; padding:48px 40px 22px;">
+    <div class="footer-grid" style="display:grid; grid-template-columns:minmax(260px,1.25fr) repeat(3,minmax(180px,1fr)); gap:32px; align-items:start;">
       <div>
         <div style="display:inline-flex; align-items:center; margin-bottom:14px;">
-          <a href="/"><img src="/ratehub-2c-trimmed.png" alt="ExchangeHub - live FX rates & conversion" style="height:78px; width:auto; display:block;" /></a>
+          <a href="/"><img class="footer-logo" src="/ratehub-2c-trimmed.png" alt="ExchangeHub - live FX rates & conversion" style="height:78px; width:auto; display:block;" loading="lazy" decoding="async" /></a>
         </div>
         <p style="color:#a79fa0; line-height:1.6; margin:0 0 10px; font-size:14px;">Currency converters, pair charts, indexed dashboards, and exchange-rate explainers built for quick comparison and market context.</p>
         <p style="font-size:13px; color:#6f6864; margin:0;">Rates are informational mid-market references. Banks, brokers, card networks, and transfer providers may apply spreads, fees, and settlement rules.</p>
@@ -43,7 +43,7 @@ const bottomLinks = secondary === "company" ? [] : INFO_LINKS;
       <div>
         <h2 style="margin:0 0 8px; font-size:13px; color:#f5f2f1; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Popular pairs</h2>
         <div style="width:22px; height:2px; background:#e11d3f; margin-bottom:14px;"></div>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:8px;">
+        <div class="footer-pairs" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:8px;">
           {popularPairs.map((link) => {
             const [base, target] = link.label.split(" to ");
             return (
@@ -59,7 +59,7 @@ const bottomLinks = secondary === "company" ? [] : INFO_LINKS;
       <div>
         <h2 style="margin:0 0 8px; font-size:13px; color:#f5f2f1; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Cross rates</h2>
         <div style="width:22px; height:2px; background:#e11d3f; margin-bottom:14px;"></div>
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:8px;">
+        <div class="footer-pairs" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:8px;">
           {crossRates.map((link) => {
             const [base, target] = link.label.split(" to ");
             return (

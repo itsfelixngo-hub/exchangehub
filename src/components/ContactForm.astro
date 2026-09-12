@@ -19,6 +19,7 @@ const labelStyle = "display:block; font-size:13px; font-weight:600; color:#a79fa
   method="post"
   action="/contact"
   novalidate
+  class="contact-card"
   style="background:#151315; border:1px solid #2a2426; border-radius:16px; padding:26px 28px; margin-top:36px;"
 >
   <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:19px; color:#f5f2f1; margin:0 0 6px;">Send a message</h2>
@@ -42,7 +43,7 @@ const labelStyle = "display:block; font-size:13px; font-weight:600; color:#a79fa
     <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
   </div>
 
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+  <div class="contact-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
     <div>
       <label for="contact-name" style={labelStyle}>Name</label>
       <input id="contact-name" name="name" type="text" autocomplete="name" maxlength="80" value={values.name} required style={fieldStyle} />

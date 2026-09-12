@@ -52,7 +52,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
     <Header pairMovers={model.pairMovers} active="ExchangeHub" autoLang={autoLang} />
 
     <div style="background:radial-gradient(1100px 560px at 82% -10%, rgba(225,29,63,0.28), transparent 60%), #0c0b0d;">
-      <div style="max-width:1280px; margin:0 auto; padding:64px 40px 72px; display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px; align-items:center;">
+      <div class="page-pad home-hero" style="max-width:1280px; margin:0 auto; padding:64px 40px 72px; display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px; align-items:center;">
         <div style="display:flex; flex-direction:column; gap:24px; align-items:flex-start; font-family:'Manrope', Arial, sans-serif;">
           <span style="display:inline-flex; align-items:center; gap:8px; background:rgba(225,29,63,0.14); border:1px solid rgba(225,29,63,0.4); color:#ff4d6d; font-size:13px; font-weight:600; padding:7px 14px; border-radius:999px;">
             <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#ff4d6d" /></svg>
@@ -63,7 +63,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             Track {configCurrencies().length} currencies with live charts and full historical data — all in one dashboard.
             {model.updated && <> Updated {model.updated}.</>}
           </p>
-          <div style="display:flex; gap:14px; flex-wrap:wrap;">
+          <div class="home-cta" style="display:flex; gap:14px; flex-wrap:wrap;">
             <a href="#today-rates" style="display:inline-flex; align-items:center; gap:8px; height:50px; padding:0 26px; border-radius:999px; font-weight:600; font-size:15px; cursor:pointer; background:#e11d3f; color:#fff; border:none; box-shadow:0 0 0 1px rgba(225,29,63,0.5), 0 12px 30px rgba(225,29,63,0.35);">
               Open rate board
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
@@ -73,7 +73,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
         </div>
 
         {model.hero && (
-          <div style="background:rgba(255,255,255,0.04); backdrop-filter:blur(6px); border:1px solid #2a2426; border-radius:20px; padding:28px; font-family:'Manrope', Arial, sans-serif;">
+          <div class="hero-card" style="background:rgba(255,255,255,0.04); backdrop-filter:blur(6px); border:1px solid #2a2426; border-radius:20px; padding:28px; font-family:'Manrope', Arial, sans-serif;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <span translate="no" style="font-size:13px; font-weight:600; color:#a79fa0; display:inline-flex; align-items:center;">
                 <span id="hero-pair-base">{model.hero.label.split("/")[0]}</span>
@@ -83,7 +83,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               <span translate="no" style="font-size:11px; color:#a79fa0; background:rgba(255,255,255,0.06); padding:4px 9px; border-radius:999px;">24H</span>
             </div>
             <div style="display:flex; align-items:baseline; gap:10px; margin-top:14px;">
-              <span id="hero-rate" translate="no" style="font-family:'Space Grotesk', Arial, sans-serif; font-size:44px; font-weight:700; color:#f5f2f1;">{model.hero.rate}</span>
+              <span id="hero-rate" class="hero-rate" translate="no" style="font-family:'Space Grotesk', Arial, sans-serif; font-size:44px; font-weight:700; color:#f5f2f1;">{model.hero.rate}</span>
               <span id="hero-change" translate="no" style={`display:inline-flex; align-items:center; gap:4px; color:${model.hero.direction === "up" ? "#34d399" : model.hero.direction === "down" ? "#ff4d6d" : "#a79fa0"}; font-size:14px; font-weight:600; background:${model.hero.direction === "up" ? "rgba(52,211,153,0.14)" : model.hero.direction === "down" ? "rgba(225,29,63,0.14)" : "rgba(255,255,255,.06)"}; padding:4px 9px; border-radius:999px;`}>
                 <svg
                   id="hero-change-arrow"
@@ -127,13 +127,13 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
         )}
       </div>
 
-      <div id="converter" style="max-width:1280px; margin:0 auto; padding:0 40px 56px; font-family:'Manrope', Arial, sans-serif;">
-        <div id="conv-card" data-rates={JSON.stringify(model.latestUsdTable)} style="background:#ffffff; border-radius:20px; padding:32px; box-shadow:0 24px 60px rgba(0,0,0,0.35); position:relative;">
-          <div style="display:grid; grid-template-columns:1fr 1fr;">
-            <div style="padding-right:28px;">
+      <div id="converter" class="page-pad" style="max-width:1280px; margin:0 auto; padding:0 40px 56px; font-family:'Manrope', Arial, sans-serif;">
+        <div id="conv-card" class="conv-card" data-rates={JSON.stringify(model.latestUsdTable)} style="background:#ffffff; border-radius:20px; padding:32px; box-shadow:0 24px 60px rgba(0,0,0,0.35); position:relative;">
+          <div class="conv-grid" style="display:grid; grid-template-columns:1fr 1fr;">
+            <div class="conv-side conv-side-from" style="padding-right:28px;">
               <div style="font-size:13px; color:#6b6560; font-weight:600; margin-bottom:10px;">From</div>
               <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-                <div style="display:flex; align-items:baseline; font-size:32px; font-weight:800; color:#14100f;">
+                <div class="conv-amount-wrap" style="display:flex; align-items:baseline; font-size:32px; font-weight:800; color:#14100f;">
                   <span id="conv-amount-symbol" translate="no">{currencySymbol(converterFrom)}</span>
                   <input id="conv-amount" type="text" inputmode="decimal" translate="no" value="1.00" style="font-size:32px; font-weight:800; color:#14100f; border:none; outline:none; width:110px; padding:0;" />
                 </div>
@@ -147,17 +147,17 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                   <div id="conv-from-panel" class="conv-panel picker-scroll" style="display:none; position:absolute; right:0; top:calc(100% + 8px); z-index:30; width:220px; max-height:260px; overflow-y:auto; background:#fff; border:1px solid #e6e1de; border-radius:10px; box-shadow:0 16px 40px rgba(15,23,42,.14); padding:6px;">
                     {configCurrencies().map((code) => (
                       <button type="button" class="conv-option" data-code={code} style="display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; border-radius:8px; padding:7px 8px; cursor:pointer; text-align:left; font-size:13px; color:#14100f;">
-                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
+                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
-            <div style="padding-left:28px; border-left:1px solid #e6e1de;">
+            <div class="conv-side conv-side-to" style="padding-left:28px; border-left:1px solid #e6e1de;">
               <div style="font-size:13px; color:#6b6560; font-weight:600; margin-bottom:10px;">To</div>
               <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-                <span style="font-size:32px; font-weight:800; color:#14100f;"><span id="conv-result-symbol" translate="no">{currencySymbol(converterTarget)}</span><span id="conv-result" translate="no">{converterRate ? formatRate(converterRate) : "—"}</span></span>
+                <span class="conv-result" style="font-size:32px; font-weight:800; color:#14100f;"><span id="conv-result-symbol" translate="no">{currencySymbol(converterTarget)}</span><span id="conv-result" translate="no">{converterRate ? formatRate(converterRate) : "—"}</span></span>
                 <div style="position:relative;">
                   <button type="button" id="conv-to-btn" data-code={converterTarget} style="display:inline-flex; align-items:center; gap:8px; background:transparent; border:none; cursor:pointer; padding:0;">
                     <img class="conv-flag" src={flagSrc(converterTarget)} alt="" width="24" height="24" style="display:block; flex:0 0 auto;" />
@@ -168,18 +168,22 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                   <div id="conv-to-panel" class="conv-panel picker-scroll" style="display:none; position:absolute; right:0; top:calc(100% + 8px); z-index:30; width:220px; max-height:260px; overflow-y:auto; background:#fff; border:1px solid #e6e1de; border-radius:10px; box-shadow:0 16px 40px rgba(15,23,42,.14); padding:6px;">
                     {configCurrencies().map((code) => (
                       <button type="button" class="conv-option" data-code={code} style="display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; border-radius:8px; padding:7px 8px; cursor:pointer; text-align:left; font-size:13px; color:#14100f;">
-                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
+                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
+            {/* A grid child rather than a sibling of the grid: it stays
+                absolutely positioned (against the card, which is the nearest
+                positioned ancestor) on desktop, and on mobile it drops into
+                the flow between the two stacked sides via `order`. */}
+            <button type="button" id="conv-swap" class="conv-swap" style="position:absolute; left:50%; top:78px; transform:translate(-50%,-50%); width:36px; height:36px; border-radius:50%; background:#fff; border:1px solid #e6e1de; box-shadow:0 4px 10px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center; cursor:pointer;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14100f" stroke-width="2.2" set:html={SWAP_ICON} />
+            </button>
           </div>
-          <button type="button" id="conv-swap" style="position:absolute; left:50%; top:78px; transform:translate(-50%,-50%); width:36px; height:36px; border-radius:50%; background:#fff; border:1px solid #e6e1de; box-shadow:0 4px 10px rgba(0,0,0,0.12); display:flex; align-items:center; justify-content:center; cursor:pointer;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14100f" stroke-width="2.2" set:html={SWAP_ICON} />
-          </button>
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:24px; padding-top:24px; border-top:1px solid #f0ece9; flex-wrap:wrap;">
+          <div class="conv-footer" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:24px; padding-top:24px; border-top:1px solid #f0ece9; flex-wrap:wrap;">
             <div>
               <div id="conv-summary" translate="no" style="font-size:17px; font-weight:700; color:#14100f;">1.00 {converterFrom} = {converterRate ? formatRate(converterRate) : "—"} {converterTarget}</div>
               <div style="font-size:13px; color:#8b857f; margin-top:2px;">Mid-market rate {model.updated && <>as of {model.updated}</>}</div>
@@ -370,19 +374,19 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
           })();
         </script>
 
-        <div style="margin-top:20px; border-radius:16px; padding:28px 32px; background:radial-gradient(700px 260px at 85% 0%, rgba(225,29,63,0.35), transparent 65%), #14100f; display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap;">
+        <div class="home-banner" style="margin-top:20px; border-radius:16px; padding:28px 32px; background:radial-gradient(700px 260px at 85% 0%, rgba(225,29,63,0.35), transparent 65%), #14100f; display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap;">
           <div style="font-size:21px; font-weight:700; color:#fff; max-width:520px; line-height:1.35;">Explore any currency pair with full historical charts and context.</div>
           <a href="/chart" style="height:44px; padding:0 22px; border-radius:999px; background:#fff; color:#14100f; border:none; font-weight:700; font-size:14px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center;">Open chart tool</a>
         </div>
       </div>
 
-      <div id="today-rates" style="max-width:1280px; margin:0 auto; padding:0 40px 96px; font-family:'Manrope', Arial, sans-serif;">
+      <div id="today-rates" class="page-pad" style="max-width:1280px; margin:0 auto; padding:0 40px 96px; font-family:'Manrope', Arial, sans-serif;">
         <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:8px;">
-          <h2 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:28px; color:#f5f2f1; margin:0;">Today's exchange rates</h2>
+          <h2 class="home-section-title" style="font-family:'Space Grotesk', Arial, sans-serif; font-size:28px; color:#f5f2f1; margin:0;">Today's exchange rates</h2>
         </div>
 
         <div style="background:#151315; border:1px solid #2a2426; border-radius:16px; overflow:hidden;">
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 22px; background:#0c0b0d; border-bottom:1px solid #2a2426;">
+          <div id="rates-bar" class="rates-bar" style="display:flex; align-items:center; justify-content:space-between; padding:16px 22px; background:#0c0b0d; border-bottom:1px solid #2a2426;">
             <div style="display:flex; align-items:center; gap:10px;">
               <img id="rates-bar-flag" src={flagSrc(quote)} alt="" width="24" height="24" style="display:block;" />
               <span id="rates-bar-label" translate="no" style="color:#f5f2f1; font-weight:700; font-size:15px;">{CURRENCY_PROFILES[quote]?.name ?? quote} ({quote})</span>
@@ -391,8 +395,8 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             <span style="color:#a79fa0; font-size:14px;">1</span>
           </div>
 
-          <div style="display:flex; align-items:stretch;">
-            <div class="picker-scroll" style="width:240px; flex:0 0 240px; border-right:1px solid #2a2426; padding:16px; display:flex; flex-direction:column; gap:14px; max-height:520px; overflow-y:auto; overflow-x:hidden;">
+          <div class="rates-split" style="display:flex; align-items:stretch;">
+            <div id="rates-picker" class="picker-scroll rates-picker" data-open="false" style="width:240px; flex:0 0 240px; border-right:1px solid #2a2426; padding:16px; display:flex; flex-direction:column; gap:14px; max-height:520px; overflow-y:auto; overflow-x:hidden;">
               <div style="display:flex; align-items:center; gap:8px; background:#1c191b; border:1px solid #2a2426; border-radius:8px; padding:9px 12px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a79fa0" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
                 <input
@@ -413,7 +417,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                       data-search={`${code} ${CURRENCY_PROFILES[code]?.name ?? ""}`.toLowerCase()}
                       style={`display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:8px; background:${code === quote ? "#1c191b" : "transparent"}; cursor:pointer;`}
                     >
-                      <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" />
+                      <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
                       <span class="picker-option-label" style={`color:${code === quote ? "#f5f2f1" : "#a79fa0"}; font-size:13px; flex:1;`}><span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}</span>
                       {code === quote && <svg class="picker-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff4d6d" stroke-width="2.6"><path d="M5 13l4 4L19 7" /></svg>}
                     </div>
@@ -430,7 +434,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                       data-search={`${code} ${CURRENCY_PROFILES[code]?.name ?? ""}`.toLowerCase()}
                       style={`display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:8px; background:${code === quote ? "#1c191b" : "transparent"}; cursor:pointer;`}
                     >
-                      <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" />
+                      <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
                       <span class="picker-option-label" style={`color:${code === quote ? "#f5f2f1" : "#a79fa0"}; font-size:13px;`}><span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}</span>
                     </div>
                   ))}
@@ -444,19 +448,20 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 {rateRows.map((row, i) => (
                   <div
                     data-rate-row
+                    class="rate-row"
                     style={`display:${i >= VISIBLE_RATE_ROWS ? "none" : "flex"}; align-items:center; padding:20px 24px; ${i < rateRows.length - 1 ? "border-bottom:1px solid #2a2426;" : ""} ${i % 2 === 1 ? "background:#1c191b;" : ""}`}>
-                    <span translate="no" style="flex:0 0 68px; color:#f5f2f1; font-weight:700; font-size:16px;">{row.target}</span>
-                    <span translate="no" style="flex:0 0 132px; text-align:right; font-variant-numeric:tabular-nums; color:#f5f2f1; font-weight:700; font-size:16px;">{row.rate}</span>
-                    <span translate="no" style={`flex:0 0 auto; min-width:86px; margin-left:16px; text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; background:${row.direction === "up" ? "rgba(52,211,153,0.14)" : row.direction === "down" ? "rgba(225,29,63,0.14)" : "rgba(255,255,255,.06)"}; color:${row.direction === "up" ? "#34d399" : row.direction === "down" ? "#ff4d6d" : "#a79fa0"}; font-size:13px; font-weight:600; padding:5px 11px; border-radius:999px;`}>
+                    <span class="rr-code" translate="no" style="flex:0 0 68px; color:#f5f2f1; font-weight:700; font-size:16px;">{row.target}</span>
+                    <span class="rr-rate" translate="no" style="flex:0 0 132px; text-align:right; font-variant-numeric:tabular-nums; color:#f5f2f1; font-weight:700; font-size:16px;">{row.rate}</span>
+                    <span class="rr-change" translate="no" style={`flex:0 0 auto; min-width:86px; margin-left:16px; text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; background:${row.direction === "up" ? "rgba(52,211,153,0.14)" : row.direction === "down" ? "rgba(225,29,63,0.14)" : "rgba(255,255,255,.06)"}; color:${row.direction === "up" ? "#34d399" : row.direction === "down" ? "#ff4d6d" : "#a79fa0"}; font-size:13px; font-weight:600; padding:5px 11px; border-radius:999px;`}>
                       {row.changeLabel}
                     </span>
                     {row.points && (
-                      <svg width="120" height="30" viewBox="0 0 120 30" style="margin-left:28px; flex:0 0 auto;" preserveAspectRatio="none">
+                      <svg class="rr-spark" width="120" height="30" viewBox="0 0 120 30" style="margin-left:28px; flex:0 0 auto;" preserveAspectRatio="none">
                         <polyline points={row.points} fill="none" stroke={row.direction === "down" ? "#ff4d6d" : "#34d399"} stroke-width="2" />
                       </svg>
                     )}
-                    <span style="flex:1 1 auto; min-width:16px;"></span>
-                    <a href={row.href} style="display:inline-flex; flex:0 0 auto; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:999px; background:#e11d3f; color:#fff; border:none; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                    <span class="rr-gap" style="flex:1 1 auto; min-width:16px;"></span>
+                    <a class="rr-view" href={row.href} style="display:inline-flex; flex:0 0 auto; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:999px; background:#e11d3f; color:#fff; border:none; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                       View
                     </a>
@@ -531,15 +536,18 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 const stripe = i % 2 === 1 ? "background:#1c191b;" : "";
                 const display = i >= step ? "none" : "flex";
                 const spark = row.points
-                  ? `<svg width="120" height="30" viewBox="0 0 120 30" style="margin-left:28px; flex:0 0 auto;" preserveAspectRatio="none"><polyline points="${row.points}" fill="none" stroke="${row.direction === "down" ? "#ff4d6d" : "#34d399"}" stroke-width="2"/></svg>`
+                  ? `<svg class="rr-spark" width="120" height="30" viewBox="0 0 120 30" style="margin-left:28px; flex:0 0 auto;" preserveAspectRatio="none"><polyline points="${row.points}" fill="none" stroke="${row.direction === "down" ? "#ff4d6d" : "#34d399"}" stroke-width="2"/></svg>`
                   : "";
-                return `<div data-rate-row style="display:${display}; align-items:center; padding:20px 24px; ${border} ${stripe}">
-                  <span translate="no" style="flex:0 0 68px; color:#f5f2f1; font-weight:700; font-size:16px;">${row.target}</span>
-                  <span translate="no" style="flex:0 0 132px; text-align:right; font-variant-numeric:tabular-nums; color:#f5f2f1; font-weight:700; font-size:16px;">${row.rate}</span>
-                  <span translate="no" style="flex:0 0 auto; min-width:86px; margin-left:16px; text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; background:${c.bg}; color:${c.fg}; font-size:13px; font-weight:600; padding:5px 11px; border-radius:999px;">${row.changeLabel}</span>
+                // Class names here must match the server-rendered row above —
+                // the responsive rules key off them, and this markup replaces
+                // that one wholesale when the quote currency changes.
+                return `<div data-rate-row class="rate-row" style="display:${display}; align-items:center; padding:20px 24px; ${border} ${stripe}">
+                  <span class="rr-code" translate="no" style="flex:0 0 68px; color:#f5f2f1; font-weight:700; font-size:16px;">${row.target}</span>
+                  <span class="rr-rate" translate="no" style="flex:0 0 132px; text-align:right; font-variant-numeric:tabular-nums; color:#f5f2f1; font-weight:700; font-size:16px;">${row.rate}</span>
+                  <span class="rr-change" translate="no" style="flex:0 0 auto; min-width:86px; margin-left:16px; text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; background:${c.bg}; color:${c.fg}; font-size:13px; font-weight:600; padding:5px 11px; border-radius:999px;">${row.changeLabel}</span>
                   ${spark}
-                  <span style="flex:1 1 auto; min-width:16px;"></span>
-                  <a href="${row.href}" style="display:inline-flex; flex:0 0 auto; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:999px; background:#e11d3f; color:#fff; border:none; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                  <span class="rr-gap" style="flex:1 1 auto; min-width:16px;"></span>
+                  <a class="rr-view" href="${row.href}" style="display:inline-flex; flex:0 0 auto; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:999px; background:#e11d3f; color:#fff; border:none; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
                     View
                   </a>
@@ -597,13 +605,29 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 .catch(() => {});
             }
 
+            // On mobile the currency picker has no room beside the rows, so
+            // it collapses into a panel the base-currency bar opens. The
+            // media query owns whether it is collapsible at all; this only
+            // records the open state, which is inert at wider widths.
+            const ratesBar = document.getElementById("rates-bar");
+            const ratesPicker = document.getElementById("rates-picker");
+            if (ratesBar && ratesPicker) {
+              ratesBar.addEventListener("click", () => {
+                ratesPicker.dataset.open = ratesPicker.dataset.open === "true" ? "false" : "true";
+              });
+            }
+
             const todayRates = document.getElementById("today-rates");
             if (todayRates) {
               todayRates.addEventListener("click", (event) => {
                 const option = event.target.closest("[data-picker-option]");
                 if (!option || !todayRates.contains(option)) return;
                 const code = option.dataset.code;
-                if (code) selectQuote(code);
+                if (!code) return;
+                selectQuote(code);
+                // Picking is the panel's whole purpose — leaving it open
+                // would bury the rows the visitor just asked for.
+                if (ratesPicker) ratesPicker.dataset.open = "false";
               });
             }
 
