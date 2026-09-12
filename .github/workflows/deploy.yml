@@ -1,9 +1,16 @@
 name: Deploy
 
+# This file exists on the `astro` branch and deploys the Astro app. The copy on
+# `main` is untouched and deploys the Flask app. The branch is the switch:
+# whichever one you push (or dispatch) last is what production runs, because
+# both reset the same APP_DIR checkout and both write the same nginx upstream.
+#
+# The concurrency group below is shared with main's workflow on purpose, so a
+# push to each branch at the same time cannot have the two deploys interleave.
 on:
   push:
     branches:
-      - main
+      - astro
   workflow_dispatch:
 
 concurrency:
@@ -97,25 +104,16 @@ jobs:
           PROD_ENV: ${{ secrets.PROD_ENV }}
           GITHUB_TOKEN: ${{ github.token }}
           SKIP_GIT_FETCH: 'true'
-          # Which app nginx serves. Set the repository variable WEB_STACK
-          # (Settings -> Secrets and variables -> Actions -> Variables) to
-          # 'flask' to roll back to the old app, or leave it unset for Astro.
-          # A variable rather than a secret: it is not sensitive, and unlike a
-          # secret its current value is visible in the UI, which matters for
-          # something that decides what production runs.
-          #
-          # Either direction is a normal blue/green switch — the new container
-          # is health-checked and warmed on the idle port before nginx moves,
-          # and the superseded one is removed only afterwards. So flipping this
-          # back and forth is safe, and the workflow_dispatch trigger above is
-          # how you do it without pushing a commit.
-          WEB_STACK: ${{ vars.WEB_STACK || 'astro' }}
+          # The branch this workflow file lives on, and therefore the code the
+          # runner checks out. There is no WEB_STACK switch: pushing or
+          # dispatching `main` runs main's own workflow and puts the Flask app
+          # back, which is the rollback.
+          DEPLOY_BRANCH: astro
           # Set the repository variable SWITCH_NGINX to 'false' to stage the
           # Astro container on the idle port without moving traffic onto it.
           # Use it for the first cutover: /healthz reads no rate data, so only
           # a real page request proves the container can reach R2. Verify, then
           # set it back to 'true' (or delete the variable) and re-run Deploy.
-          # Ignored when WEB_STACK=flask.
           SWITCH_NGINX: ${{ vars.SWITCH_NGINX || 'true' }}
         run: |
           set -euo pipefail
@@ -124,53 +122,42 @@ jobs:
           test -n "$GITHUB_TOKEN"
           test -n "$GITHUB_REPOSITORY"
           GIT_AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          # APP_DIR is one checkout shared with main's workflow, so this resets
+          # it onto the Astro branch. Deploying main later resets it back —
+          # that is exactly how the rollback works.
           git -c http.extraheader="AUTHORIZATION: basic $GIT_AUTH" \
             fetch --force "https://github.com/${GITHUB_REPOSITORY}.git" \
-            main:refs/remotes/origin/main
-          git reset --hard origin/main
+            "${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}"
+          git reset --hard "origin/${DEPLOY_BRANCH}"
 
           printf '%s\n' "$PROD_ENV" > .env
 
           chmod +x scripts/deploy_blue_green.sh scripts/deploy_astro.sh
 
-          case "$WEB_STACK" in
-            astro|flask) ;;
-            *) echo "WEB_STACK must be 'astro' or 'flask', got '$WEB_STACK'" >&2; exit 1 ;;
-          esac
-          echo "Deploying with WEB_STACK=$WEB_STACK"
-
           # Shared by both scripts, so the two cannot disagree about which
           # ports and which nginx upstream file they are switching.
           export APP_NAME APP_DIR BLUE_PORT GREEN_PORT NGINX_UPSTREAM_CONF
-          export BRANCH=main
+          export BRANCH="$DEPLOY_BRANCH"
           export SKIP_GIT_FETCH
           export SWITCH_NGINX
 
-          if [ "$WEB_STACK" = "astro" ]; then
-            # Mailserver and fetcher only. DEPLOY_WEB=false because the web tier
-            # is the Astro app — the step below owns the blue/green ports and
-            # the nginx upstream, and this script would otherwise claim both
-            # for a gunicorn container.
-            DEPLOY_WEB=false scripts/deploy_blue_green.sh
+          # Mailserver and fetcher only. DEPLOY_WEB=false because the web tier
+          # is the Astro app — the step below owns the blue/green ports and the
+          # nginx upstream, and this script would otherwise claim both for a
+          # gunicorn container.
+          DEPLOY_WEB=false scripts/deploy_blue_green.sh
 
-            # Then the web tier: build, health-check and warm the new Astro
-            # container, switch nginx onto it, and only then remove the old
-            # Astro container and any Flask web container it supersedes.
-            scripts/deploy_astro.sh
-          else
-            # Rollback. One script does the whole job here, the way it did
-            # before the Astro app existed — plus the names of the Astro
-            # containers it now supersedes, removed after nginx has moved.
-            SUPERSEDED_WEB_CONTAINERS="${APP_NAME}-astro-blue ${APP_NAME}-astro-green" \
-              scripts/deploy_blue_green.sh
-          fi
+          # Then the web tier: build, health-check and warm the new Astro
+          # container, switch nginx onto it, and only then remove the old Astro
+          # container and any Flask web container it supersedes.
+          scripts/deploy_astro.sh
 
           # Report what is actually serving, rather than what we meant to
           # deploy. `version` is baked into each image (1 = Flask, 2 = Astro),
           # so this line is the switch's own receipt in the job log. With
           # SWITCH_NGINX=false this deliberately still reports the OLD stack —
           # that is the point: nothing moved, and the log should say so.
-          active_color="$(cat .deploy-active-color)"
+          active_color="$(cat .deploy-active-color 2>/dev/null || echo blue)"
           if [ "$active_color" = "blue" ]; then
             active_port="$BLUE_PORT"
           else

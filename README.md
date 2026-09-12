@@ -239,7 +239,7 @@ git push origin main
 -> prints /healthz so the job log records which build went live
 ```
 
-Which app the web container runs is the `WEB_STACK` variable below.
+Which app the web container runs is decided by the branch you deploy.
 
 GitHub repository secrets:
 
@@ -253,12 +253,22 @@ PROD_ENV            # full production .env content, shared by both stacks
 ```
 
 GitHub repository **variables** (Settings → Secrets and variables → Actions →
-Variables — not secrets, so the current value is visible in the UI):
+Variables):
 
 ```text
-WEB_STACK           # 'astro' (default) or 'flask'
 SWITCH_NGINX        # 'true' (default); 'false' stages without moving traffic
 ```
+
+### Which app is serving
+
+The **branch** is the switch, and each branch carries its own deploy workflow:
+
+- push or dispatch **`astro`** → this branch's workflow → the Astro app
+- push or dispatch **`main`** → main's untouched workflow → the Flask app
+
+Both reset the same `APP_DIR` checkout and write the same nginx upstream, so
+whichever ran last is what production serves. They share one concurrency group,
+so the two can never interleave.
 
 ### First cutover
 
@@ -275,23 +285,23 @@ catches. So do the first switch in two runs:
 2. Check a real page has real rates. Then set `SWITCH_NGINX=true` (or delete
    the variable) and run Deploy again to move traffic.
 
-### Which app is serving
+### Rolling back
 
-`WEB_STACK` decides what nginx proxies to:
+Dispatch Deploy on `main`. Its workflow resets `APP_DIR` back to the Flask
+code and redeploys it the way it always did — health-checked and warmed on the
+idle port before nginx moves.
 
-- `astro` — the site in `astro-web/`. `deploy_blue_green.sh` runs with
-  `DEPLOY_WEB=false` (mailserver and fetcher only), then `deploy_astro.sh`
-  deploys the web tier and removes the superseded Flask web containers.
-- `flask` — the rollback. `deploy_blue_green.sh` runs as it always did, and
-  removes the Astro containers after nginx has moved.
+**One manual step after a rollback.** Main's `deploy_blue_green.sh` predates
+this branch and does not know the Astro containers exist, so one is left
+running on the other blue/green port. The rollback itself works, but the *next*
+deploy of main needs that port and will fail on it. Clear it once:
 
-Both directions are ordinary blue/green switches: the new container is
-health-checked and warmed on the idle port *before* nginx moves, and the old
-one is removed only after. So flipping the variable and re-running Deploy
-(`workflow_dispatch`, no commit needed) is safe in either direction.
+```bash
+docker rm -f exchangehub-astro-blue exchangehub-astro-green
+```
 
 Both stacks read the same `PROD_ENV` secret — the Astro app walks up from its
-working directory to the repo-root `.env` — so the cutover needs no new secret.
+working directory to the repo-root `.env` — so switching needs no new secret.
 
 `/healthz` says which one actually answered. The version is baked into each
 image, so it reports the container's own identity rather than a config value:
