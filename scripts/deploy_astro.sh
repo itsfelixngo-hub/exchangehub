@@ -35,6 +35,21 @@ UPLOADS_HOST_PATH="${UPLOADS_HOST_PATH:-${APP_DIR}/wp-content/uploads}"
 # variable deploy_blue_green.sh uses for the reverse direction.
 SUPERSEDED_WEB_CONTAINERS="${SUPERSEDED_WEB_CONTAINERS:-${APP_NAME}-web-blue ${APP_NAME}-web-green ${APP_NAME}-web}"
 
+# SWITCH_NGINX=false stages the new container on the idle port and stops there:
+# nginx is not touched, the active-colour file is not rewritten, and nothing is
+# removed. Visitors keep getting whatever is serving now.
+#
+# This exists because /healthz deliberately reads no rate data, so it cannot
+# tell a working deploy from one that cannot reach R2. On this site R2 is the
+# only source of rates (the production fetcher writes nowhere else), and a
+# failed read falls back to local files that are empty -- which renders as a
+# site with no rates rather than an error. The only way to catch that is to
+# ask the staged container for a real page before sending it traffic.
+#
+# So: run once with SWITCH_NGINX=false, curl the port it prints, then run
+# again with the default to flip.
+SWITCH_NGINX="${SWITCH_NGINX:-true}"
+
 cd "$APP_DIR"
 
 if [[ "${SKIP_GIT_FETCH:-false}" != "true" ]]; then
@@ -140,6 +155,26 @@ if curl -fsS --max-time "${WARM_TIMEOUT:-60}" "http://127.0.0.1:${new_port}/" >/
   echo "Warm-up completed."
 else
   echo "Warm-up did not complete; continuing anyway." >&2
+fi
+
+if [[ "$SWITCH_NGINX" != "true" ]]; then
+  cat <<EOF
+
+Staged $image as $new_container on 127.0.0.1:${new_port}.
+Nginx was NOT switched — visitors are still on whatever was serving before.
+
+Check it against real data before flipping:
+
+  curl -s 127.0.0.1:${new_port}/healthz
+  curl -s 127.0.0.1:${new_port}/ | grep -c 'data-rates'
+  curl -s 127.0.0.1:${new_port}/usd-vnd | grep -o '1 USD = [0-9.,]* VND'
+  curl -s '127.0.0.1:${new_port}/api/rates?quote=VND' | head -c 200
+
+An empty rate board means the container cannot read R2 — check the R2 keys in
+.env before going further. When it looks right, deploy again with the default
+SWITCH_NGINX=true to move nginx onto it.
+EOF
+  exit 0
 fi
 
 upstream_conf="upstream ${APP_NAME}_backend {

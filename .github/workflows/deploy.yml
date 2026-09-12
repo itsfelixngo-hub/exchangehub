@@ -110,6 +110,13 @@ jobs:
           # back and forth is safe, and the workflow_dispatch trigger above is
           # how you do it without pushing a commit.
           WEB_STACK: ${{ vars.WEB_STACK || 'astro' }}
+          # Set the repository variable SWITCH_NGINX to 'false' to stage the
+          # Astro container on the idle port without moving traffic onto it.
+          # Use it for the first cutover: /healthz reads no rate data, so only
+          # a real page request proves the container can reach R2. Verify, then
+          # set it back to 'true' (or delete the variable) and re-run Deploy.
+          # Ignored when WEB_STACK=flask.
+          SWITCH_NGINX: ${{ vars.SWITCH_NGINX || 'true' }}
         run: |
           set -euo pipefail
 
@@ -137,6 +144,7 @@ jobs:
           export APP_NAME APP_DIR BLUE_PORT GREEN_PORT NGINX_UPSTREAM_CONF
           export BRANCH=main
           export SKIP_GIT_FETCH
+          export SWITCH_NGINX
 
           if [ "$WEB_STACK" = "astro" ]; then
             # Mailserver and fetcher only. DEPLOY_WEB=false because the web tier
@@ -159,7 +167,9 @@ jobs:
 
           # Report what is actually serving, rather than what we meant to
           # deploy. `version` is baked into each image (1 = Flask, 2 = Astro),
-          # so this line is the switch's own receipt in the job log.
+          # so this line is the switch's own receipt in the job log. With
+          # SWITCH_NGINX=false this deliberately still reports the OLD stack —
+          # that is the point: nothing moved, and the log should say so.
           active_color="$(cat .deploy-active-color)"
           if [ "$active_color" = "blue" ]; then
             active_port="$BLUE_PORT"

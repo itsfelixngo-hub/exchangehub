@@ -257,7 +257,23 @@ Variables — not secrets, so the current value is visible in the UI):
 
 ```text
 WEB_STACK           # 'astro' (default) or 'flask'
+SWITCH_NGINX        # 'true' (default); 'false' stages without moving traffic
 ```
+
+### First cutover
+
+`/healthz` deliberately reads no rate data, so it cannot tell a working deploy
+from one that cannot reach R2 — and on this site R2 is the only source of
+rates, with a failed read falling back to local files that are empty. That
+renders as a site with no rates rather than an error, which no health check
+catches. So do the first switch in two runs:
+
+1. Set `SWITCH_NGINX=false`, run Deploy. The Astro container is built,
+   health-checked and warmed on the idle port; nginx is not touched and
+   visitors stay on the old app. The job log prints the port and the curls to
+   run against it.
+2. Check a real page has real rates. Then set `SWITCH_NGINX=true` (or delete
+   the variable) and run Deploy again to move traffic.
 
 ### Which app is serving
 
