@@ -288,23 +288,39 @@ catches. So do the first switch in two runs:
 2. Check a real page has real rates. Then set `SWITCH_NGINX=true` (or delete
    the variable) and run Deploy again to move traffic.
 
-### Rolling back
+### Switching between the two
 
-Dispatch Deploy on `main`. Its workflow resets `APP_DIR` back to the Flask
-code and redeploys it the way it always did — health-checked and warmed on the
-idle port before nginx moves.
+The two stacks run side by side on separate ports, so switching is an nginx
+vhost swap — seconds, no rebuild, and the other stack stays up the whole time.
 
-**One manual step after a rollback.** Main's `deploy_blue_green.sh` predates
-this branch and does not know the Astro containers exist, so one is left
-running on the other blue/green port. The rollback itself works, but the *next*
-deploy of main needs that port and will fail on it. Clear it once:
+| | Flask (v1) | Astro (v2) |
+| :--- | :--- | :--- |
+| Ports | 5001 / 5002 | 5003 / 5004 |
+| Upstream | `exchangehub_backend` | `exchangehub_astro_backend` |
+| Upstream file | `conf.d/exchangehub-upstream.conf` | `conf.d/exchangehub-astro-upstream.conf` |
+| vhost | `deploy/nginx-exchangehub.conf` | `deploy/nginx-exchangehub-astro.conf` |
+
+**Only one vhost may be enabled.** They share a `server_name`, and with both
+enabled nginx does not fail — it warns about a conflicting server name and
+silently serves whichever it loaded first.
 
 ```bash
-docker rm -f exchangehub-astro-blue exchangehub-astro-green
+# to Astro
+sudo rm -f /etc/nginx/sites-enabled/exchangehub.conf
+sudo ln -sf /etc/nginx/sites-available/exchangehub-astro.conf \
+            /etc/nginx/sites-enabled/exchangehub-astro.conf
+sudo nginx -t && sudo nginx -s reload
+
+# back to Flask
+sudo rm -f /etc/nginx/sites-enabled/exchangehub-astro.conf
+sudo ln -sf /etc/nginx/sites-available/exchangehub.conf \
+            /etc/nginx/sites-enabled/exchangehub.conf
+sudo nginx -t && sudo nginx -s reload
 ```
 
-Both stacks read the same `PROD_ENV` secret — the Astro app walks up from its
-working directory to the repo-root `.env` — so switching needs no new secret.
+Deploying never moves traffic by itself: pushing `astro` builds and
+health-checks the site on 5003/5004 and stops there. The vhost decides who
+sees it.
 
 `/healthz` says which one actually answered. The version is baked into each
 image, so it reports the container's own identity rather than a config value:

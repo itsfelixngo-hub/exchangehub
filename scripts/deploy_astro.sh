@@ -20,20 +20,24 @@ APP_DIR="${APP_DIR:-/home/deploy/apps/exchangehub}"
 BRANCH="${BRANCH:-main}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 NETWORK_NAME="${NETWORK_NAME:-${APP_NAME}_net}"
-BLUE_PORT="${BLUE_PORT:-5001}"
-GREEN_PORT="${GREEN_PORT:-5002}"
-ACTIVE_FILE="${ACTIVE_FILE:-.deploy-active-color}"
-NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/${APP_NAME}-upstream.conf}"
+# Its own pair of ports, its own active-colour file and its own upstream file,
+# all separate from the Flask app's 5001/5002. That is what lets both stacks
+# run at the same time: the old site keeps serving while this one is built and
+# checked, and switching between them is an nginx vhost change rather than a
+# redeploy. It also removes a trap -- sharing the ports meant a rollback left
+# an Astro container squatting on the port the next Flask deploy needed.
+ASTRO_BLUE_PORT="${ASTRO_BLUE_PORT:-5003}"
+ASTRO_GREEN_PORT="${ASTRO_GREEN_PORT:-5004}"
+ACTIVE_FILE="${ACTIVE_FILE:-.deploy-active-color-astro}"
+NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/${APP_NAME}-astro-upstream.conf}"
+# Must match the `proxy_pass` in deploy/nginx-ratehubfx-astro-proxy.conf.
+UPSTREAM_NAME="${UPSTREAM_NAME:-${APP_NAME}_astro_backend}"
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
 # The app listens on 4321 inside the container (Dockerfile).
 CONTAINER_PORT="${CONTAINER_PORT:-4321}"
 UPLOADS_HOST_PATH="${UPLOADS_HOST_PATH:-${APP_DIR}/wp-content/uploads}"
-# The Flask web containers this replaces. Removed after the switch, not before,
-# so a failed deploy leaves the old stack serving. Same name and meaning as the
-# variable deploy_blue_green.sh uses for the reverse direction.
-SUPERSEDED_WEB_CONTAINERS="${SUPERSEDED_WEB_CONTAINERS:-${APP_NAME}-web-blue ${APP_NAME}-web-green ${APP_NAME}-web}"
 
 # SWITCH_NGINX=false stages the new container on the idle port and stops there:
 # nginx is not touched, the active-colour file is not rewritten, and nothing is
@@ -93,11 +97,11 @@ fi
 if [[ "$current_color" == "blue" ]]; then
   new_color="green"
   old_color="blue"
-  new_port="$GREEN_PORT"
+  new_port="$ASTRO_GREEN_PORT"
 else
   new_color="blue"
   old_color="green"
-  new_port="$BLUE_PORT"
+  new_port="$ASTRO_BLUE_PORT"
 fi
 
 image="${APP_NAME}-astro:${IMAGE_TAG}"
@@ -177,7 +181,7 @@ EOF
   exit 0
 fi
 
-upstream_conf="upstream ${APP_NAME}_backend {
+upstream_conf="upstream ${UPSTREAM_NAME} {
     server 127.0.0.1:${new_port};
 }
 "
@@ -195,14 +199,12 @@ printf "%s" "$new_color" > "$ACTIVE_FILE"
 
 docker rm -f "$old_container" >/dev/null 2>&1 || true
 
-# Traffic is on Astro now, so the Flask web containers are dead weight holding
-# the other blue/green port. The fetcher and mailserver are left running.
-for superseded in ${SUPERSEDED_WEB_CONTAINERS:-}; do
-  if docker inspect "$superseded" >/dev/null 2>&1; then
-    echo "Stopping superseded container: $superseded"
-    docker rm -f "$superseded" >/dev/null 2>&1 || true
-  fi
-done
+# The Flask containers are deliberately left running. They are on their own
+# ports (5001/5002) and their own nginx upstream, so they cost a little memory
+# and nothing else -- and keeping them up is what makes the rollback instant:
+# re-enable the old vhost, reload nginx, done. Stop them when you are sure:
+#
+#   docker rm -f ${APP_NAME}-web-blue ${APP_NAME}-web-green
 
 docker image prune -f >/dev/null 2>&1 || true
 

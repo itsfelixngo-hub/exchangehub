@@ -88,9 +88,12 @@ jobs:
         env:
           APP_NAME: ${{ secrets.APP_NAME || 'exchangehub' }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/deploy/apps/exchangehub' }}
-          BLUE_PORT: ${{ secrets.BLUE_PORT || '5001' }}
-          GREEN_PORT: ${{ secrets.GREEN_PORT || '5002' }}
-          NGINX_UPSTREAM_CONF: ${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}
+          # The Astro site's own ports and its own upstream file — separate
+          # from the Flask app's 5001/5002 so both stacks can run at once and
+          # switching is a vhost swap rather than a redeploy.
+          ASTRO_BLUE_PORT: ${{ secrets.ASTRO_BLUE_PORT || '5003' }}
+          ASTRO_GREEN_PORT: ${{ secrets.ASTRO_GREEN_PORT || '5004' }}
+          NGINX_UPSTREAM_CONF: ${{ secrets.NGINX_ASTRO_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-astro-upstream.conf' }}
           # One secret for both stacks — the Astro app reads this same .env
           # (src/lib/env.ts reads the repo-root file), so nothing
           # new has to be stored for the cutover.
@@ -127,9 +130,7 @@ jobs:
 
           chmod +x scripts/deploy_fetcher_mail.sh scripts/deploy_astro.sh
 
-          # Shared by both scripts, so the two cannot disagree about which
-          # ports and which nginx upstream file they are switching.
-          export APP_NAME APP_DIR BLUE_PORT GREEN_PORT NGINX_UPSTREAM_CONF
+          export APP_NAME APP_DIR ASTRO_BLUE_PORT ASTRO_GREEN_PORT NGINX_UPSTREAM_CONF
           export BRANCH="$DEPLOY_BRANCH"
           export SKIP_GIT_FETCH
           export SWITCH_NGINX
@@ -143,17 +144,19 @@ jobs:
           # container and any Flask web container it supersedes.
           scripts/deploy_astro.sh
 
-          # Report what is actually serving, rather than what we meant to
-          # deploy. `version` is baked into each image (1 = Flask, 2 = Astro),
-          # so this line is the switch's own receipt in the job log. With
-          # SWITCH_NGINX=false this deliberately still reports the OLD stack —
-          # that is the point: nothing moved, and the log should say so.
-          active_color="$(cat .deploy-active-color 2>/dev/null || echo blue)"
-          if [ "$active_color" = "blue" ]; then
-            active_port="$BLUE_PORT"
+          # What this deploy put on the Astro ports. It does NOT prove the
+          # site is serving it: which stack visitors reach is decided by which
+          # vhost is enabled in /etc/nginx/sites-enabled, and that is a manual
+          # symlink swap (see deploy/nginx-exchangehub-astro.conf). Deploying
+          # never takes traffic away from the old site on its own.
+          astro_color="$(cat .deploy-active-color-astro 2>/dev/null || echo blue)"
+          if [ "$astro_color" = "blue" ]; then
+            astro_port="$ASTRO_BLUE_PORT"
           else
-            active_port="$GREEN_PORT"
+            astro_port="$ASTRO_GREEN_PORT"
           fi
-          echo "Live now (${active_color} on ${active_port}):"
-          curl -fsS "http://127.0.0.1:${active_port}/healthz"
+          echo "Astro is on ${astro_color} (127.0.0.1:${astro_port}):"
+          curl -fsS "http://127.0.0.1:${astro_port}/healthz"
           echo
+          echo "Whether visitors see it depends on the enabled nginx vhost:"
+          ls -l /etc/nginx/sites-enabled/ | grep -i exchangehub || true
