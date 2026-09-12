@@ -7,7 +7,12 @@ import { configuredPairKeys, pairKey } from "./config";
 export type RateEntry = { ts: number; base: string; target: string; rate: number };
 
 const R2_READ_CACHE_SECONDS = Number(process.env.R2_READ_CACHE_SECONDS ?? "60");
-const UPLOADS_DIR = process.env.WP_UPLOADS ?? path.resolve(process.cwd(), "../wp-content/uploads");
+// Relative to the repo root, which is where both `astro dev` and the built
+// server run from. (It was "../wp-content/uploads" while the app lived in
+// astro-web/; leaving that after the move would have pointed one level above
+// the repo.) In production WP_UPLOADS is set explicitly and this is unused —
+// the container mounts the host directory somewhere else entirely.
+const UPLOADS_DIR = process.env.WP_UPLOADS ?? path.resolve(process.cwd(), "wp-content/uploads");
 const RATES_DIR = path.join(UPLOADS_DIR, "rates");
 
 function cacheFresh(ts: number): boolean {

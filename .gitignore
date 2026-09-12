@@ -1,8 +1,33 @@
 .env
+.env.production
+
+# Python
 __pycache__/
 *.pyc
+
+# Node / Astro
+node_modules/
+dist/
+.astro/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local data and deploy state
 rates.db
 wp-content/uploads/
 docker-data/
-dist/
 .deploy-state/
+
+# Editors
+.DS_Store
+.idea/
+
+# Local debugging leftovers: saved page dumps and curl cookie jars from
+# poking at the contact form by hand. Not part of the app.
+page.html
+res.html
+j2
+jz
+smtp.log

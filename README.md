@@ -2,10 +2,13 @@ Project: Modular Exchange Rates and Game Content AI
 
 Modules
 
-- `modules/exchange_rates`: exchange-rate fetcher, Flask API/dev pages, WordPress plugin assets, and SEO pair-page renderer.
+- `src/`, `public/`: the Astro site — the pages nginx serves.
+- `modules/exchange_rates`: the rate fetcher, and its R2 storage layer. The Flask API, WordPress plugin assets and SEO renderer that used to live here are gone; the Astro site replaced them.
 - `modules/game_content_ai`: AI-assisted rewrite tool for game detail content.
 
-This project fetches exchange rates (e.g., VND ↔ USD) every 5 minutes and stores them in a local SQLite database. It provides a small Flask API for conversions and a frontend chart.
+This project fetches exchange rates (e.g., VND ↔ USD) every 5 minutes and writes them to Cloudflare R2. The Astro site at the repo root reads them and renders the converter, the rate board and the per-pair pages.
+
+Two images come out of this one build context: `Dockerfile` builds the site, `Dockerfile.fetcher` builds the fetcher.
 
 Quick start
 
@@ -121,7 +124,7 @@ R2_SECRET_ACCESS_KEY=YOUR_R2_SECRET_ACCESS_KEY
 R2_PREFIX=
 ```
 
-- `R2_ENABLED=true` makes the fetcher and Flask app read/write R2.
+- `R2_ENABLED=true` makes the fetcher write to R2 and the site read from it.
 - `LOCAL_STORAGE_ENABLED=false` disables writes to `wp-content/uploads`, which is the recommended production setting.
 - `R2_PREFIX` is an optional folder prefix inside the bucket. Leave it blank if files should be written as `rates/index.json`, `rates/vnd_usd.json`, and `rates.html`. Do not set `R2_PREFIX=rates`, because the code already writes into the `rates/` path.
 
@@ -131,7 +134,7 @@ To upload existing local files in `wp-content/uploads/rates/` once:
 python3 sync_rates_to_r2.py
 ```
 
-- After `R2_ENABLED=true` is set, each normal fetch reads existing pair history from R2, writes the updated pair JSON files, `rates/index.json`, and `rates.html` back to R2, and the Flask app can read rates from R2 too.
+- After `R2_ENABLED=true` is set, each normal fetch reads existing pair history from R2, writes the updated pair JSON files, `rates/index.json`, and `rates.html` back to R2, and the site reads them from R2.
 - Keep `LOCAL_STORAGE_ENABLED=true` only if you explicitly want local test files under `wp-content/uploads`.
 
 Deploy with R2
@@ -213,7 +216,7 @@ docker-compose up --build -d
 
 GitHub Actions zero-downtime deploy
 
-This repo includes `.github/workflows/deploy.yml` and `scripts/deploy_blue_green.sh` for blue/green VPS deploys. The deploy job runs directly on a self-hosted GitHub Actions runner installed on the production VPS; it does not use SSH.
+This repo includes `.github/workflows/deploy.yml`, `scripts/deploy_astro.sh` (the site, blue/green) and `scripts/deploy_fetcher_mail.sh` (the fetcher and the mailserver) for VPS deploys. The deploy job runs directly on a self-hosted GitHub Actions runner installed on the production VPS; it does not use SSH.
 
 Install one GitHub Actions self-hosted runner on the VPS and assign these labels:
 
@@ -525,7 +528,7 @@ python3 scripts/cloudflare_setup.py --cache-rule --apply    # cache HTML at the 
 ```
 
 The nginx side lives in `deploy/nginx-exchangehub.conf` and is **not** deployed
-by pushing -- `deploy_blue_green.sh` only rewrites the blue/green upstream. Copy
+by pushing -- `deploy_astro.sh` only rewrites the blue/green upstream. Copy
 it to `/etc/nginx/sites-enabled/exchangehub.conf` and reload.
 
 Monitoring and hardening

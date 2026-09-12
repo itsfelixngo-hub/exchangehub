@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Blue/green deploy for the Astro web app (astro-web/), which replaces the
+# Blue/green deploy for the Astro site at the repo root, which replaces the
 # Flask app as the thing nginx serves.
 #
 # It reuses the machinery deploy_blue_green.sh already established rather than
@@ -27,7 +27,7 @@ NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/${APP_NAME}-upstre
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
-# The app listens on 4321 inside the container (astro-web/Dockerfile).
+# The app listens on 4321 inside the container (Dockerfile).
 CONTAINER_PORT="${CONTAINER_PORT:-4321}"
 UPLOADS_HOST_PATH="${UPLOADS_HOST_PATH:-${APP_DIR}/wp-content/uploads}"
 # The Flask web containers this replaces. Removed after the switch, not before,
@@ -79,7 +79,7 @@ env_value() {
 }
 
 # Absolute URLs (canonical, og:url, sitemap) cannot be derived from the request
-# alone behind TLS termination -- see astro-web/src/lib/site.ts. Setting it
+# alone behind TLS termination -- see src/lib/site.ts. Setting it
 # here removes the guess entirely.
 SITE_URL="$(env_value SITE_URL "https://$(env_value CF_ZONE_NAME ratehubfx.com)")"
 CONTACT_SMTP_HOST_VALUE="$(env_value CONTACT_SMTP_HOST "${APP_NAME}-mailserver")"
@@ -106,12 +106,12 @@ old_container="${APP_NAME}-astro-${old_color}"
 
 docker network create "$NETWORK_NAME" >/dev/null 2>&1 || true
 
-docker build --build-arg APP_BUILD="$IMAGE_TAG" -t "$image" ./astro-web
+docker build --build-arg APP_BUILD="$IMAGE_TAG" -t "$image" .
 docker rm -f "$new_container" >/dev/null 2>&1 || true
 
 # The rate JSON is mounted read-only: the fetcher owns those files, the web
 # tier only reads them. With R2_ENABLED=true the mount is just the fallback
-# path in astro-web/src/lib/rates.ts, which is why it is created if missing
+# path in src/lib/rates.ts, which is why it is created if missing
 # rather than required.
 mkdir -p "$UPLOADS_HOST_PATH"
 

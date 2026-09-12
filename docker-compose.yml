@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mailserver:
     container_name: exchangehub-mailserver
@@ -39,57 +37,11 @@ services:
       - NET_ADMIN
     restart: unless-stopped
 
-  web:
-    container_name: exchangehub-web
-    image: exchangehub-web:latest
-    build: .
-    command: gunicorn --bind 0.0.0.0:5000 --workers ${GUNICORN_WORKERS:-2} --worker-class gthread --threads ${GUNICORN_THREADS:-8} --timeout 60 --graceful-timeout 30 --keep-alive 15 --access-logfile - app:app
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./:/app:rw
-      - ${UPLOADS_HOST_PATH:-./wp-content/uploads}:/app/wp-content/uploads:rw
-    environment:
-      - FLASK_ENV=production
-      - R2_ENABLED=${R2_ENABLED:-}
-      - LOCAL_STORAGE_ENABLED=${LOCAL_STORAGE_ENABLED:-true}
-      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
-      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL:-}
-      - R2_BUCKET=${R2_BUCKET:-}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
-      - R2_PREFIX=${R2_PREFIX:-}
-      - R2_CACHE_CONTROL=${R2_CACHE_CONTROL:-public, max-age=60}
-      - R2_CONNECT_TIMEOUT=${R2_CONNECT_TIMEOUT:-3}
-      - R2_READ_TIMEOUT=${R2_READ_TIMEOUT:-8}
-      - R2_MAX_ATTEMPTS=${R2_MAX_ATTEMPTS:-2}
-      - R2_READ_CACHE_SECONDS=${R2_READ_CACHE_SECONDS:-60}
-      - PAGE_CACHE_SECONDS=${PAGE_CACHE_SECONDS:-60}
-      - PAGE_STALE_SECONDS=${PAGE_STALE_SECONDS:-900}
-      - WARM_CACHE_ON_START=${WARM_CACHE_ON_START:-true}
-      - CHART_MAX_POINTS=${CHART_MAX_POINTS:-400}
-      - STATIC_MAX_AGE=${STATIC_MAX_AGE:-86400}
-      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
-      - SITE_CONTACT_EMAIL=${SITE_CONTACT_EMAIL:-contact@ratehubfx.com}
-      - CONTACT_FORWARD_TO=${CONTACT_FORWARD_TO:-test.noreply909@gmail.com}
-      - CONTACT_FROM_EMAIL=${CONTACT_FROM_EMAIL:-contact@ratehubfx.com}
-      - CONTACT_SMTP_HOST=${CONTACT_SMTP_HOST:-mailserver}
-      - CONTACT_SMTP_PORT=${CONTACT_SMTP_PORT:-587}
-      - CONTACT_SMTP_USER=${CONTACT_SMTP_USER:-}
-      - CONTACT_SMTP_PASSWORD=${CONTACT_SMTP_PASSWORD:-}
-      - CONTACT_SMTP_USE_TLS=${CONTACT_SMTP_USE_TLS:-true}
-      - CONTACT_SMTP_TLS_VERIFY=${CONTACT_SMTP_TLS_VERIFY:-false}
-      - CONTACT_RATE_LIMIT_SECONDS=${CONTACT_RATE_LIMIT_SECONDS:-60}
-      - CONTACT_MIN_SUBMIT_SECONDS=${CONTACT_MIN_SUBMIT_SECONDS:-3}
-      - CONTACT_ROTATION_TOLERANCE=${CONTACT_ROTATION_TOLERANCE:-8}
-
-  # The site itself. `web` above is the Flask app it replaces, kept for now so
-  # the two can be compared side by side on different ports; production runs
-  # only this one (scripts/deploy_astro.sh).
+  # The site itself.
   astro:
     container_name: exchangehub-astro
     image: exchangehub-astro:latest
-    build: ./astro-web
+    build: .
     ports:
       - "${ASTRO_PORT:-4321}:4321"
     volumes:
@@ -101,7 +53,7 @@ services:
       - PORT=4321
       - WP_UPLOADS=/data/uploads
       # Absolute URLs (canonical, og:url, sitemap) cannot be derived from the
-      # request behind a proxy — see astro-web/src/lib/site.ts.
+      # request behind a proxy — see src/lib/site.ts.
       - SITE_URL=${SITE_URL:-http://localhost:4321}
       - R2_ENABLED=${R2_ENABLED:-}
       - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
@@ -132,7 +84,9 @@ services:
   fetcher:
     container_name: exchangehub-fetcher
     image: exchangehub-fetcher:latest
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.fetcher
     command: /app/fetch_entrypoint.sh
     volumes:
       - ./:/app:rw

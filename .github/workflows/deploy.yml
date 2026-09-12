@@ -38,23 +38,18 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Compile Python sources and smoke test
+      # The Flask web app is gone from this branch; what is left of the Python
+      # is the rate fetcher, so that is what gets checked.
+      - name: Compile Python sources
+        run: python -m compileall -q .
+
+      - name: Import the fetcher
         env:
-          FLASK_SECRET_KEY: ci-only-secret
-          LOCAL_STORAGE_ENABLED: 'false'
           R2_ENABLED: 'false'
-        run: |
-          python -m compileall -q .
-          python - <<'PY'
-          from app import app
+        run: python -c "from modules.exchange_rates.fetch_rates import main"
 
-          with app.test_client() as client:
-              response = client.get('/healthz')
-              assert response.status_code == 200, response.text
-          PY
-
-      - name: Build Docker image
-        run: docker build --tag exchangehub:ci .
+      - name: Build the fetcher image
+        run: docker build -f Dockerfile.fetcher --tag exchangehub:ci .
 
   # The web tier is the Astro app, so nothing reaches production until it
   # builds, typechecks and passes its own smoke test.
@@ -71,14 +66,12 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: astro-web/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: astro-web
         run: npm ci
 
       - name: Typecheck, build and smoke test
-        working-directory: astro-web
         run: |
           npm run check
           npm run build
@@ -99,7 +92,7 @@ jobs:
           GREEN_PORT: ${{ secrets.GREEN_PORT || '5002' }}
           NGINX_UPSTREAM_CONF: ${{ secrets.NGINX_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-upstream.conf' }}
           # One secret for both stacks — the Astro app reads this same .env
-          # (astro-web/src/lib/env.ts walks up to the repo root), so nothing
+          # (src/lib/env.ts reads the repo-root file), so nothing
           # new has to be stored for the cutover.
           PROD_ENV: ${{ secrets.PROD_ENV }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -132,7 +125,7 @@ jobs:
 
           printf '%s\n' "$PROD_ENV" > .env
 
-          chmod +x scripts/deploy_blue_green.sh scripts/deploy_astro.sh
+          chmod +x scripts/deploy_fetcher_mail.sh scripts/deploy_astro.sh
 
           # Shared by both scripts, so the two cannot disagree about which
           # ports and which nginx upstream file they are switching.
@@ -141,11 +134,9 @@ jobs:
           export SKIP_GIT_FETCH
           export SWITCH_NGINX
 
-          # Mailserver and fetcher only. DEPLOY_WEB=false because the web tier
-          # is the Astro app — the step below owns the blue/green ports and the
-          # nginx upstream, and this script would otherwise claim both for a
-          # gunicorn container.
-          DEPLOY_WEB=false scripts/deploy_blue_green.sh
+          # Mailserver and the single fetcher container. Neither is the
+          # website, and neither touches the blue/green ports.
+          scripts/deploy_fetcher_mail.sh
 
           # Then the web tier: build, health-check and warm the new Astro
           # container, switch nginx onto it, and only then remove the old Astro

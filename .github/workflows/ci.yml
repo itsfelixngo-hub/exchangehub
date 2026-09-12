@@ -33,26 +33,19 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q .
 
-      - name: Run application smoke test
+      # The Flask web app is gone from this branch; the Python that is left is
+      # the rate fetcher, so that is what gets imported.
+      - name: Import the fetcher
         env:
-          FLASK_SECRET_KEY: ci-only-secret
-          LOCAL_STORAGE_ENABLED: 'false'
           R2_ENABLED: 'false'
-        run: |
-          python - <<'PY'
-          from app import app
-
-          with app.test_client() as client:
-              response = client.get('/healthz')
-              assert response.status_code == 200, response.text
-          PY
+        run: python -c "from modules.exchange_rates.fetch_rates import main"
 
       - name: Validate deployment shell scripts
         run: bash -n scripts/*.sh fetch_entrypoint.sh modules/exchange_rates/*.sh
 
-  # The Astro app in astro-web/ is what nginx serves; the Flask job above still
-  # covers the fetcher and the scripts. Independent of `test`, so a break in
-  # either stack is reported on its own rather than hidden behind the other.
+  # The Astro app is what nginx serves; the Python job above covers the rate
+  # fetcher and the scripts. Independent of `test`, so a break in either half
+  # is reported on its own rather than hidden behind the other.
   astro:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -64,22 +57,19 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          # Matches the engines field in astro-web/package.json and the base
-          # image in astro-web/Dockerfile; Astro 7 refuses to run on Node 20.
+          # Matches the engines field in package.json and the base image in
+          # Dockerfile; Astro 7 refuses to run on Node 20.
           node-version: '22'
           cache: npm
-          cache-dependency-path: astro-web/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: astro-web
         run: npm ci
 
       - name: Typecheck
-        working-directory: astro-web
         run: npm run check
 
       - name: Build
-        working-directory: astro-web
         run: npm run build
 
       # Boots the built server against fixture rate files and asserts on the
@@ -87,7 +77,6 @@ jobs:
       # No credentials needed: R2 is off and the fixtures are written to a
       # temp directory by the script itself.
       - name: Smoke test
-        working-directory: astro-web
         run: npm run smoke
 
   docker:
@@ -99,11 +88,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Flask image
-        run: docker build --tag exchangehub:ci .
+      - name: Build fetcher image
+        run: docker build -f Dockerfile.fetcher --tag exchangehub:ci .
 
       - name: Build Astro image
-        run: docker build --tag exchangehub-astro:ci ./astro-web
+        run: docker build --tag exchangehub-astro:ci .
 
       # Proves the runtime stage can actually serve, not just that it built —
       # a missing production dependency only shows up when the server starts.

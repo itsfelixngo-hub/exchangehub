@@ -3,14 +3,14 @@
 // Importing this first guarantees process.env is populated the same way in
 // `astro dev`, `astro build`, and the standalone Node server in production.
 //
-// The app shares the repo-root .env with the Flask app it replaces: R2
-// credentials, contact SMTP and the rest are configured once, in one file.
-// Files are loaded from the working directory upwards to the repo root, and
-// dotenv keeps the first value it sees for a key — so astro-web/.env can
-// override a single value for local work without holding a second copy of
-// every secret. Walking up (rather than a fixed "../.env") also means it
-// finds the file whether the process starts in astro-web/ or at the repo
-// root, which `astro dev` and the built server respectively do.
+// The app shares the repo-root .env with the rate fetcher: R2 credentials,
+// contact SMTP and the rest are configured once, in one file, and one
+// PROD_ENV secret covers both. Files are loaded from the working directory
+// upwards to the repo root, and dotenv keeps the first value it sees for a
+// key, so a .env in a subdirectory can override a single value for local work
+// without holding a second copy of every secret. Walking up rather than
+// reading a fixed path also means it finds the file wherever the process is
+// started from.
 import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";

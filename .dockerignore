@@ -1,3 +1,8 @@
+# One build context now serves two images — Dockerfile (the Astro site) and
+# Dockerfile.fetcher (the Python rate fetcher) — so nothing here may exclude
+# what either of them needs. The Astro build needs package*.json, src/, public/
+# and the two config files; the fetcher needs requirements.txt, fetch_rates.py,
+# fetch_entrypoint.sh and modules/.
 .git
 .github
 .agents
@@ -9,18 +14,34 @@ docker-data
 .env
 .env.*
 !.env.sample
+
+# Python build leftovers
 __pycache__
 *.pyc
 .pytest_cache
 .venv
 venv
+
+# Node build leftovers. node_modules in particular: the Astro image runs its
+# own `npm ci`, and copying the host's tree in would add ~320 MB and risk
+# native binaries built against a different libc than the alpine base.
+node_modules
+dist
+.astro
+
+# Data, not code. The fetcher writes rates to R2; these are local artefacts.
 wp-content/uploads
 rates.db
 fetch.log
-# The Astro app has its own image (astro-web/Dockerfile) and its own build
-# context. Left in, its node_modules added ~320 MB to this image -- which now
-# only runs the fetcher -- for files nothing here imports.
-astro-web
+*.log
+
+# Runbooks and editor settings — read by people, not by either image.
 deploy
 .vscode
 .idea
+
+# Saved page dumps and curl cookie jars from poking at the contact form.
+page.html
+res.html
+j2
+jz

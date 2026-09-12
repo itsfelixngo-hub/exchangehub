@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# Deploys the two things that are not the website: the mailserver the contact
+# form sends through, and the single fetcher container that pulls rates and
+# writes them to R2.
+#
+# On this branch the website is the Astro app — scripts/deploy_astro.sh owns
+# the blue/green ports, the nginx upstream and the active-colour file. This
+# script touches none of them. (It began as deploy_blue_green.sh, which also
+# deployed the Flask web tier; main's copy still does.)
+#
+# The fetcher runs from the Python image built by Dockerfile.fetcher.
 set -euo pipefail
 
 APP_NAME="${APP_NAME:-exchangehub}"
@@ -6,15 +16,6 @@ APP_DIR="${APP_DIR:-/home/deploy/apps/exchangehub}"
 BRANCH="${BRANCH:-main}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 NETWORK_NAME="${NETWORK_NAME:-${APP_NAME}_net}"
-BLUE_PORT="${BLUE_PORT:-5001}"
-GREEN_PORT="${GREEN_PORT:-5002}"
-ACTIVE_FILE="${ACTIVE_FILE:-.deploy-active-color}"
-NGINX_UPSTREAM_CONF="${NGINX_UPSTREAM_CONF:-/etc/nginx/conf.d/${APP_NAME}-upstream.conf}"
-GUNICORN_WORKERS="${GUNICORN_WORKERS:-}"
-GUNICORN_THREADS="${GUNICORN_THREADS:-}"
-HEALTH_PATH="${HEALTH_PATH:-/healthz}"
-HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
-HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
 MAIL_HEALTH_RETRIES="${MAIL_HEALTH_RETRIES:-12}"
 MAIL_HEALTH_SLEEP="${MAIL_HEALTH_SLEEP:-5}"
 STATE_DIR="${STATE_DIR:-${APP_DIR}/.deploy-state}"
@@ -37,15 +38,6 @@ if [[ ! -f .env ]]; then
   echo ".env is missing in $APP_DIR" >&2
   exit 1
 fi
-
-if [[ -z "$GUNICORN_WORKERS" ]] && grep -q '^GUNICORN_WORKERS=' .env; then
-  GUNICORN_WORKERS="$(grep '^GUNICORN_WORKERS=' .env | tail -n1 | cut -d= -f2-)"
-fi
-if [[ -z "$GUNICORN_THREADS" ]] && grep -q '^GUNICORN_THREADS=' .env; then
-  GUNICORN_THREADS="$(grep '^GUNICORN_THREADS=' .env | tail -n1 | cut -d= -f2-)"
-fi
-GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
-GUNICORN_THREADS="${GUNICORN_THREADS:-8}"
 
 env_value() {
   local key="$1"
@@ -107,24 +99,7 @@ else
   echo "Mail relay disabled: outbound delivery will use recipient MX on TCP/25."
 fi
 
-current_color="none"
-if [[ -f "$ACTIVE_FILE" ]]; then
-  current_color="$(cat "$ACTIVE_FILE")"
-fi
-
-if [[ "$current_color" == "blue" ]]; then
-  new_color="green"
-  old_color="blue"
-  new_port="$GREEN_PORT"
-else
-  new_color="blue"
-  old_color="green"
-  new_port="$BLUE_PORT"
-fi
-
 image="${APP_NAME}:${IMAGE_TAG}"
-new_container="${APP_NAME}-web-${new_color}"
-old_container="${APP_NAME}-web-${old_color}"
 fetcher_container="${APP_NAME}-fetcher"
 
 docker network create "$NETWORK_NAME" >/dev/null 2>&1 || true
@@ -215,99 +190,8 @@ for attempt in $(seq 1 "$MAIL_HEALTH_RETRIES"); do
   sleep "$MAIL_HEALTH_SLEEP"
 done
 
-docker build --build-arg APP_BUILD="$IMAGE_TAG" -t "$image" .
+docker build --build-arg APP_BUILD="$IMAGE_TAG" -f Dockerfile.fetcher -t "$image" .
 
-# DEPLOY_WEB=false leaves the web tier alone and deploys only the mailserver
-# and the fetcher. That is how this script is called when the site is served by
-# the Astro app: scripts/deploy_astro.sh owns the blue/green ports, the nginx
-# upstream and the active-colour file, and running the gunicorn container as
-# well would take one of those ports and fight it for the upstream. The image
-# is still built above, because the fetcher runs from it.
-if [[ "${DEPLOY_WEB:-true}" != "true" ]]; then
-  echo "DEPLOY_WEB=false: skipping the Flask web tier, deploying fetcher only."
-else
-
-docker rm -f "$new_container" >/dev/null 2>&1 || true
-
-docker run -d \
-  --name "$new_container" \
-  --restart unless-stopped \
-  --network "$NETWORK_NAME" \
-  --env-file .env \
-  -e FLASK_ENV=production \
-  -e APP_COLOR="$new_color" \
-  -e CONTACT_SMTP_HOST="$CONTACT_SMTP_HOST_VALUE" \
-  -e CONTACT_SMTP_PORT="$CONTACT_SMTP_PORT_VALUE" \
-  -p "127.0.0.1:${new_port}:5000" \
-  "$image" \
-  gunicorn \
-    --bind 0.0.0.0:5000 \
-    --workers "$GUNICORN_WORKERS" \
-    --worker-class gthread \
-    --threads "$GUNICORN_THREADS" \
-    --timeout 60 \
-    --graceful-timeout 30 \
-    --keep-alive 15 \
-    --access-logfile - \
-    app:app
-
-for attempt in $(seq 1 "$HEALTH_RETRIES"); do
-  if curl -fsS "http://127.0.0.1:${new_port}${HEALTH_PATH}" >/dev/null; then
-    break
-  fi
-  if [[ "$attempt" == "$HEALTH_RETRIES" ]]; then
-    echo "Health check failed for $new_container on port $new_port" >&2
-    docker logs --tail=120 "$new_container" >&2 || true
-    exit 1
-  fi
-  sleep "$HEALTH_SLEEP"
-done
-
-# Each gunicorn worker keeps its own page cache, so warm more than once to
-# give every worker a turn. /healthz never touches the rate model, so without
-# this the first real visitor after a deploy pays the full cold render.
-echo "Warming $new_container before switching traffic..."
-warmed=0
-for _ in $(seq 1 "${WARM_REQUESTS:-4}"); do
-  if curl -fsS --max-time "${WARM_TIMEOUT:-60}" "http://127.0.0.1:${new_port}/" >/dev/null 2>&1; then
-    warmed=$((warmed + 1))
-  fi
-done
-if [[ "$warmed" -gt 0 ]]; then
-  echo "Warm-up completed ($warmed requests)."
-else
-  echo "Warm-up did not complete; continuing anyway." >&2
-fi
-
-upstream_conf="upstream ${APP_NAME}_backend {
-    server 127.0.0.1:${new_port};
-}
-"
-
-if [[ -w "$(dirname "$NGINX_UPSTREAM_CONF")" ]]; then
-  printf "%s" "$upstream_conf" > "$NGINX_UPSTREAM_CONF"
-else
-  printf "%s" "$upstream_conf" | sudo tee "$NGINX_UPSTREAM_CONF" >/dev/null
-fi
-
-sudo nginx -t
-sudo nginx -s reload
-
-printf "%s" "$new_color" > "$ACTIVE_FILE"
-
-docker rm -f "$old_container" >/dev/null 2>&1 || true
-
-# Rolling back from the Astro stack: traffic is on gunicorn again, so the
-# Astro containers are dead weight holding the other blue/green port. Empty by
-# default — only the rollback path in the Deploy workflow passes this.
-for superseded in ${SUPERSEDED_WEB_CONTAINERS:-}; do
-  if docker inspect "$superseded" >/dev/null 2>&1; then
-    echo "Stopping superseded container: $superseded"
-    docker rm -f "$superseded" >/dev/null 2>&1 || true
-  fi
-done
-
-fi  # DEPLOY_WEB
 
 docker rm -f "$fetcher_container" >/dev/null 2>&1 || true
 mkdir -p "$STATE_DIR"
@@ -324,10 +208,5 @@ docker run -d \
 
 docker image prune -f >/dev/null 2>&1 || true
 
-if [[ "${DEPLOY_WEB:-true}" == "true" ]]; then
-  echo "Deployed $image to $new_container on 127.0.0.1:$new_port"
-  echo "Nginx now proxies to $new_color. Fetcher is single-instance: $fetcher_container"
-else
-  echo "Deployed $image. Fetcher is single-instance: $fetcher_container"
-  echo "Web tier not touched (DEPLOY_WEB=false)."
-fi
+echo "Deployed $image. Fetcher is single-instance: $fetcher_container"
+echo "Mailserver: $MAILSERVER_CONTAINER. The web tier is scripts/deploy_astro.sh."

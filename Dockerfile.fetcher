@@ -1,0 +1,34 @@
+# The rate fetcher: pulls from OpenExchangeRates every five minutes and writes
+# the per-pair JSON to R2, which is what the site reads. It is the only Python
+# left on this branch — the Flask web app it used to share a repo with has been
+# replaced by the Astro site that `Dockerfile` builds.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1
+
+# Reported by the site's /healthz so one curl says which build answered.
+# An image argument rather than a .env key because both images read the same
+# .env, so a value set there could not tell them apart. 1 = Flask (main),
+# 2 = the Astro site. Kept here for symmetry: this image serves no HTTP.
+ARG APP_VERSION=1
+ARG APP_BUILD=unknown
+ENV APP_VERSION=$APP_VERSION
+ENV APP_BUILD=$APP_BUILD
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Only the fetcher's own files. The build context is shared with the Astro
+# image, so a bare `COPY . /app` would drag src/ and public/ in here for
+# nothing — and .dockerignore cannot exclude them, since the other image needs
+# exactly those.
+COPY fetch_rates.py fetch_entrypoint.sh /app/
+COPY modules /app/modules
+
+RUN chmod +x /app/fetch_entrypoint.sh /app/modules/exchange_rates/fetch_entrypoint.sh
+
+# Loops every five minutes; there is no server here, so no port and no
+# healthcheck endpoint. deploy_fetcher_mail.sh runs exactly one of these.
+CMD ["/app/fetch_entrypoint.sh"]
