@@ -32,7 +32,7 @@ ENV APP_BUILD=$APP_BUILD
 # outside the container; the published port stays bound to 127.0.0.1 on the
 # host, where nginx is the only thing that can reach it.
 ENV HOST=0.0.0.0
-ENV PORT=4321
+ENV PORT=5003
 
 # --omit=dev leaves out the Astro CLI and friends; the built server only needs
 # the runtime packages (@aws-sdk/client-s3, nodemailer, dotenv).
@@ -44,7 +44,7 @@ COPY --from=build /app/dist ./dist
 # Run unprivileged. The image ships with a `node` user for exactly this.
 USER node
 
-EXPOSE 4321
+EXPOSE 5003
 
 # No shell wrapper: node is PID 1 and receives SIGTERM directly, so a
 # blue/green `docker rm -f` shuts the old container down cleanly.

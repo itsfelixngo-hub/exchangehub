@@ -98,12 +98,12 @@ jobs:
       # a missing production dependency only shows up when the server starts.
       - name: Run Astro image
         run: |
-          docker run -d --name astro-ci -p 127.0.0.1:4321:4321 \
+          docker run -d --name astro-ci -p 127.0.0.1:5003:5003 \
             -e R2_ENABLED=false -e SITE_URL=https://ci.example \
             exchangehub-astro:ci
           for _ in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:4321/healthz && break
+            curl -fsS http://127.0.0.1:5003/healthz && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:4321/healthz | grep -q '"version":2'
+          curl -fsS http://127.0.0.1:5003/healthz | grep -q '"version":2'
           docker rm -f astro-ci

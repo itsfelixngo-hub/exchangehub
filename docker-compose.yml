@@ -43,18 +43,18 @@ services:
     image: exchangehub-astro:latest
     build: .
     ports:
-      - "${ASTRO_PORT:-4321}:4321"
+      - "${ASTRO_PORT:-5003}:5003"
     volumes:
       # Read-only: the fetcher owns these files, the web tier only reads them.
       - ${UPLOADS_HOST_PATH:-./wp-content/uploads}:/data/uploads:ro
     environment:
       - NODE_ENV=production
       - HOST=0.0.0.0
-      - PORT=4321
+      - PORT=5003
       - WP_UPLOADS=/data/uploads
       # Absolute URLs (canonical, og:url, sitemap) cannot be derived from the
       # request behind a proxy — see src/lib/site.ts.
-      - SITE_URL=${SITE_URL:-http://localhost:4321}
+      - SITE_URL=${SITE_URL:-http://localhost:5003}
       - R2_ENABLED=${R2_ENABLED:-}
       - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
       - R2_ENDPOINT_URL=${R2_ENDPOINT_URL:-}
@@ -66,6 +66,7 @@ services:
       - PAIR_CONCURRENCY=${PAIR_CONCURRENCY:-6}
       - CHART_MAX_POINTS=${CHART_MAX_POINTS:-400}
       - PAIR_CHART_MAX_POINTS=${PAIR_CHART_MAX_POINTS:-600}
+      - NOINDEX_LONGTAIL_PAIRS=${NOINDEX_LONGTAIL_PAIRS:-}
       # Set CONTACT_SECRET, or a restart invalidates any form being filled in.
       - CONTACT_SECRET=${CONTACT_SECRET:-}
       - CONTACT_FORWARD_TO=${CONTACT_FORWARD_TO:-test.noreply909@gmail.com}

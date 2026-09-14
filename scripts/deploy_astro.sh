@@ -35,8 +35,11 @@ UPSTREAM_NAME="${UPSTREAM_NAME:-${APP_NAME}_astro_backend}"
 HEALTH_PATH="${HEALTH_PATH:-/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_SLEEP="${HEALTH_SLEEP:-2}"
-# The app listens on 4321 inside the container (Dockerfile).
-CONTAINER_PORT="${CONTAINER_PORT:-4321}"
+# The app listens on 5003 inside the container (Dockerfile, astro.config.mjs):
+# one port for this project everywhere. The blue container therefore publishes
+# 5003 -> 5003 and the green one 5004 -> 5003 — the host port is what
+# alternates, the container port never moves.
+CONTAINER_PORT="${CONTAINER_PORT:-5003}"
 UPLOADS_HOST_PATH="${UPLOADS_HOST_PATH:-${APP_DIR}/wp-content/uploads}"
 
 # SWITCH_NGINX=false stages the new container on the idle port and stops there:

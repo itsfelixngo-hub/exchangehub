@@ -1,50 +1,38 @@
-Project: Modular Exchange Rates and Game Content AI
+Project: ExchangeHub
 
-Modules
+Two parts, one repository
 
-- `src/`, `public/`: the Astro site — the pages nginx serves.
-- `modules/exchange_rates`: the rate fetcher, and its R2 storage layer. The Flask API, WordPress plugin assets and SEO renderer that used to live here are gone; the Astro site replaced them.
-- `modules/game_content_ai`: AI-assisted rewrite tool for game detail content.
+- `src/`, `public/`: the Astro site — the pages nginx serves. Built by `Dockerfile`.
+- `modules/exchange_rates`: the rate fetcher and its R2 storage layer. Built by `Dockerfile.fetcher`. This is all the Python that is left; the Flask app, its WordPress plugin and the game-content tool were removed when the Astro site replaced them.
 
-This project fetches exchange rates (e.g., VND ↔ USD) every 5 minutes and writes them to Cloudflare R2. The Astro site at the repo root reads them and renders the converter, the rate board and the per-pair pages.
-
-Two images come out of this one build context: `Dockerfile` builds the site, `Dockerfile.fetcher` builds the fetcher.
+The fetcher pulls exchange rates (e.g., VND ↔ USD) every 5 minutes and writes them to Cloudflare R2. The site reads them from there and renders the converter, the rate board and the per-pair pages. The two never talk to each other directly — R2 is the whole interface, and the site only ever reads.
 
 Quick start
 
-1. Create a Python virtualenv and install dependencies:
+Node 22.12 or newer; Astro 7 refuses to start on Node 20.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+npm ci
+npm run dev          # http://localhost:5003
+```
+
+`.env` at the repo root is read automatically (see `src/lib/env.ts`), so a local
+run against the production R2 bucket needs no extra flags. Other scripts:
+
+```bash
+npm run check        # astro check — typecheck .astro and .ts
+npm run build        # dist/ — the Node adapter's standalone server
+npm run smoke        # boots dist/ against fixture rates and asserts the routes
+npm start            # run the built server
+```
+
+To run the fetcher locally instead — only ever one fetcher anywhere, see
+"Deploy with R2":
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-2. Fetch rates once (use cron to run every 5 minutes):
-
-```bash
 python3 fetch_rates.py
-```
-
-3. Run the web server:
-
-```bash
-python3 app.py                       # dev
-# production (what the container runs):
-gunicorn --bind 0.0.0.0:5000 --workers 2 --worker-class gthread --threads 8 app:app
-```
-
-4. Open http://localhost:5000 in your browser to view the chart.
-
-Game Content AI dev tool
-
-- Open `http://localhost:5000/tools/game-content-ai`.
-- Use dry-run mode without an API key.
-- To call OpenAI, set `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in `.env`.
-- API endpoint:
-
-```http
-POST /api/game-content/rewrite
 ```
 
 Scheduling every 5 minutes
@@ -56,48 +44,71 @@ Scheduling every 5 minutes
 */5 * * * * cd /path/to/repo && OPENEXCHANGE_APP_IDS=APP_ID_1,APP_ID_2,APP_ID_3 WP_UPLOADS=/var/www/html/wp-content/uploads /path/to/venv/bin/python3 fetch_rates.py >> /path/to/repo/fetch.log 2>&1
 ```
 
-API endpoints
+Routes the site serves
 
-- `/api/latest?base=VND&target=USD` — latest rate
-- `/api/history?base=VND&target=USD&hours=24` — last N hours
-- `/api/convert?amount=100&base=VND&target=USD` — convert using latest rate
+| Route | Purpose |
+| --- | --- |
+| `/` | converter, rate board, hero chart |
+| `/<code>` | currency hub, e.g. `/vnd` — every pair under one currency |
+| `/<base>-<target>` | pair page, e.g. `/usd-vnd` — rate, converter, chart, statistics, FAQ |
+| `/analysis` | the header's Analysis tab: every currency with its 24H card |
+| `/chart` | chart index across every tracked pair |
+| `/about`, `/contact`, `/privacy-policy`, `/terms`, `/disclaimer` | static copy from `src/lib/info.ts` |
+| `/api/rates?quote=VND` | rate-board rows for one quote currency |
+| `/api/hero?base=USD&target=VND` | hero chart series for one pair |
+| `/healthz` | liveness plus which build answered; reads no rate data |
+| `/robots.txt` | points at the sitemap index |
+| `/sitemap.xml` | index over `/sitemap-pages.xml`, `/sitemap-currencies.xml` and one `/sitemap-pairs-<code>.xml` per hub |
+
+`/vnd` and `/vnd-usd` sit in the same URL segment, so one dynamic route
+(`src/pages/[slug].astro`) serves both and tells them apart by shape. The URLs
+stay flat on purpose — the hierarchy is expressed by the breadcrumbs and the
+sitemap index, not by nesting `/vnd/usd`.
+
+Wrong or unknown pairs 404; `/eur-usd/`, `/EUR-USD`, `/eur_usd` and
+`/exchange/eur-usd` all redirect to `/eur-usd`, so one page has one URL.
 
 Performance
 
-Pages are rendered server-side and served from an in-process cache, so a request
-normally costs no rate-data work at all.
+Every page is rendered per request by the Node adapter — there is no page
+cache. What is cached is the rate data underneath, in-process and shared by
+every request the container serves.
 
-- A background warmer thread builds the rate model at startup and refreshes it
-  every `PAGE_CACHE_SECONDS`, so no visitor ever pays for a cold render. The
-  blue/green deploy also warms a new container before nginx points at it --
-  `/healthz` answers without touching the rate model, so passing the health
-  check is not proof the container is ready to serve a page quickly.
-- When a cached page does expire, the stale copy is served immediately and the
-  rebuild happens on a background thread (`PAGE_STALE_SECONDS` bounds how stale).
+- `memoByTtl` in `src/lib/rates.ts` caches the *in-flight promise*, not the
+  resolved value, so several requests arriving on a cold cache share one R2
+  read instead of each starting their own. A rejection is dropped so the next
+  caller retries rather than inheriting the failure for the whole window.
+- The cache window is `R2_READ_CACHE_SECONDS`, on the same clock as the data:
+  a cached answer can never be staler than the entries behind it.
 - Derived cross pairs (for example `EUR/JPY`) come from a single USD timeline
-  built once per cache window instead of rescanning every stored entry per pair.
-- Only pairs listed in `rate_pairs.json` are fetched from R2; misses are cached
-  so derived pairs do not cost a round trip each.
-- HTML/JSON responses are gzipped in-process and carry `Cache-Control`, so a CDN
-  or `nginx` (see `deploy/nginx-exchangehub.conf`) can serve most traffic.
-- Chart payloads are downsampled to `CHART_MAX_POINTS` and Chart.js / Google
-  Translate load lazily rather than blocking first paint.
+  built once per window instead of rescanning every stored entry per pair.
+  Misses are cached too, since most menu pairs have no stored file of their own.
+- `PAIR_CONCURRENCY` bounds how many pair histories load at once: wide enough
+  to hide R2 latency, narrow enough that only a handful of decoded histories
+  are live at the same time.
+- The blue/green deploy warms a new container with one real page request before
+  nginx points at it. `/healthz` deliberately touches no rate data, so passing
+  it is not proof the container can serve a page quickly — or at all.
+- Chart payloads are downsampled to `CHART_MAX_POINTS` / `PAIR_CHART_MAX_POINTS`.
+- gzip and `Cache-Control` are nginx's job here, not the app's — see
+  `deploy/nginx-exchangehub-astro.conf`, which also caches `/_astro/` and the
+  flag images for a year.
 
 Tuning environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PAGE_CACHE_SECONDS` | `60` | How long a rendered page stays fresh |
-| `PAGE_STALE_SECONDS` | `900` | Extra window where a stale page is served while refreshing |
-| `WARM_CACHE_ON_START` | `true` | Start the background warmer thread |
-| `CHART_MAX_POINTS` | `400` | Points kept per chart series |
-| `GZIP_LEVEL` / `GZIP_MIN_BYTES` | `6` / `1024` | Response compression |
-| `STATIC_MAX_AGE` | `86400` | `Cache-Control` max-age for `/static` |
-| `GUNICORN_WORKERS` / `GUNICORN_THREADS` | `2` / `8` | gunicorn sizing (compose and blue/green deploy) |
+| `R2_READ_CACHE_SECONDS` | `60` | How long rate data stays fresh in process |
+| `PAIR_CONCURRENCY` | `6` | Pair histories loaded at once |
+| `CHART_MAX_POINTS` | `400` | Points kept per home-page chart series |
+| `PAIR_CHART_MAX_POINTS` | `600` | Points kept per pair-page series |
+| `NOINDEX_LONGTAIL_PAIRS` | unset | Keep non-menu pairs out of the index — see "Ad network review" |
+| `SITE_URL` | unset | Origin for canonical, og:url and sitemap; set by the deploy script |
 
 Notes
 
-- The fetcher uses exchangerate.host free API.
+- The fetcher reads OpenExchangeRates (`OPENEXCHANGE_APP_IDS`, rotated when one
+  key hits its quota) and falls back to exchangerate.host for a single pair.
 - Adjust `modules/exchange_rates/rate_pairs.json` to set the exact pair files to store. Use `base_target` keys, for example:
 
 ```json
@@ -128,13 +139,7 @@ R2_PREFIX=
 - `LOCAL_STORAGE_ENABLED=false` disables writes to `wp-content/uploads`, which is the recommended production setting.
 - `R2_PREFIX` is an optional folder prefix inside the bucket. Leave it blank if files should be written as `rates/index.json`, `rates/vnd_usd.json`, and `rates.html`. Do not set `R2_PREFIX=rates`, because the code already writes into the `rates/` path.
 
-To upload existing local files in `wp-content/uploads/rates/` once:
-
-```bash
-python3 sync_rates_to_r2.py
-```
-
-- After `R2_ENABLED=true` is set, each normal fetch reads existing pair history from R2, writes the updated pair JSON files, `rates/index.json`, and `rates.html` back to R2, and the site reads them from R2.
+- After `R2_ENABLED=true` is set, each normal fetch reads existing pair history from R2, writes the updated pair JSON files and `rates/index.json` back to R2, and the site reads them from R2. There is no separate upload step: one run of `fetch_rates.py` against an empty bucket populates it.
 - Keep `LOCAL_STORAGE_ENABLED=true` only if you explicitly want local test files under `wp-content/uploads`.
 
 Deploy with R2
@@ -160,13 +165,7 @@ R2_PREFIX=
 pip install -r requirements.txt
 ```
 
-3. If the bucket is empty, upload the current local history once:
-
-```bash
-python3 sync_rates_to_r2.py
-```
-
-4. Test one fetch:
+3. Test one fetch — this also populates an empty bucket:
 
 ```bash
 python3 fetch_rates.py
@@ -179,7 +178,7 @@ Wrote r2://YOUR_BUCKET/rates/index.json
 Wrote r2://YOUR_BUCKET/rates.html
 ```
 
-5. Run the fetcher in exactly one place.
+4. Run the fetcher in exactly one place.
 
 Cron example:
 
@@ -187,31 +186,30 @@ Cron example:
 */5 * * * * cd /path/to/repo && /path/to/venv/bin/python3 fetch_rates.py >> /path/to/repo/fetch.log 2>&1
 ```
 
-Docker Compose production:
+Everything at once, locally:
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
-Local web-only after production fetcher is running:
+Site only, when the production fetcher is already running — which is the normal
+local setup, since two fetchers would both call OpenExchangeRates and write the
+same bucket:
 
 ```bash
-docker-compose up --build -d web
-docker-compose stop fetcher
+docker compose up --build -d astro
 ```
 
-Docker Compose names local containers as `exchangehub-web` and `exchangehub-fetcher`. If old containers from a previous project name still exist, remove them once:
-
-```bash
-docker rm -f alogweb_web_1 alogweb_fetcher_1 2>/dev/null || true
-docker-compose up --build -d
-```
+Compose defines three services: `astro` (the site, container
+`exchangehub-astro`, port 5003), `fetcher` (container `exchangehub-fetcher`)
+and `mailserver`. Note that production does **not** use compose — the deploy
+scripts run `docker run` directly; see "GitHub Actions zero-downtime deploy".
 
 If Docker Compose v1 fails with `KeyError: 'ContainerConfig'`, remove old compose containers and start again:
 
 ```bash
-docker-compose down --remove-orphans
-docker-compose up --build -d
+docker compose down --remove-orphans
+docker compose up --build -d
 ```
 
 GitHub Actions zero-downtime deploy
@@ -229,30 +227,33 @@ The runner user must have access to the application directory and Docker, and mu
 Flow:
 
 ```text
-git push origin main
--> CI verifies the commit on a GitHub-hosted runner
--> the production self-hosted runner fetches origin/main locally
+git push origin astro
+-> CI typechecks, builds and smoke-tests the site, and builds the fetcher image
+-> the production self-hosted runner resets APP_DIR onto origin/astro
 -> writes production .env from GitHub Secrets
 -> builds a new Docker image locally
--> starts the new web container on 127.0.0.1:5001 or 127.0.0.1:5002
+-> starts the new Astro container on 127.0.0.1:5003 or 127.0.0.1:5004
 -> checks /healthz, then warms it with a real page request
--> switches Nginx upstream and reloads Nginx
--> removes the old web container, and any container of the other stack
--> restarts exactly one fetcher container
+-> switches the Astro nginx upstream and reloads Nginx
+-> removes the old Astro container
 -> prints /healthz so the job log records which build went live
 ```
+
+The fetcher and mailserver are left alone unless `DEPLOY_FETCHER_MAIL=true`;
+which vhost visitors actually reach is a manual symlink, not a deploy step.
 
 Which app the web container runs is decided by the branch you deploy.
 
 GitHub repository secrets:
 
 ```text
-APP_DIR             # optional, defaults to /home/deploy/exchangehub
-APP_NAME            # optional, defaults to exchangehub
-BLUE_PORT           # optional, defaults to 5001
-GREEN_PORT          # optional, defaults to 5002
-NGINX_UPSTREAM_CONF # optional, defaults to /etc/nginx/conf.d/exchangehub-upstream.conf
-PROD_ENV            # full production .env content, shared by both stacks
+APP_DIR                    # optional, defaults to /home/deploy/apps/exchangehub
+APP_NAME                   # optional, defaults to exchangehub
+ASTRO_BLUE_PORT            # optional, defaults to 5003
+ASTRO_GREEN_PORT           # optional, defaults to 5004
+NGINX_ASTRO_UPSTREAM_CONF  # optional, defaults to
+                           #   /etc/nginx/conf.d/exchangehub-astro-upstream.conf
+PROD_ENV                   # full production .env content, shared by both stacks
 ```
 
 GitHub repository **variables** (Settings → Secrets and variables → Actions →
@@ -260,7 +261,16 @@ Variables):
 
 ```text
 SWITCH_NGINX        # 'true' (default); 'false' stages without moving traffic
+DEPLOY_FETCHER_MAIL # 'false' (default); 'true' makes this branch deploy the
+                    # mailserver and fetcher too — set it once main is retired
 ```
+
+The mailserver and the fetcher are one container each, shared by both stacks:
+whichever deploy ran last owns them. While `main` still exists it deploys them,
+so this branch leaves them alone — recreating them would restart the fetcher
+and interrupt mail for a change that only touches the web tier. Once `main` is
+retired, nothing else deploys them: set `DEPLOY_FETCHER_MAIL=true` then, or the
+fetcher runs forever on whatever image main last built.
 
 ### Which app is serving
 
@@ -351,9 +361,8 @@ R2_ACCESS_KEY_ID=YOUR_R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY=YOUR_R2_SECRET_ACCESS_KEY
 R2_PREFIX=
 R2_READ_CACHE_SECONDS=300
-PAGE_CACHE_SECONDS=300
-GUNICORN_WORKERS=2
-FLASK_SECRET_KEY=GENERATE_A_LONG_RANDOM_SECRET
+SITE_URL=https://ratehubfx.com
+CONTACT_SECRET=GENERATE_A_LONG_RANDOM_SECRET
 SITE_CONTACT_EMAIL=contact@ratehubfx.com
 CONTACT_FORWARD_TO=test.noreply909@gmail.com
 CONTACT_FROM_EMAIL=contact@ratehubfx.com
@@ -431,15 +440,20 @@ sudo apt-get install -y docker.io nginx git curl openssl
 sudo usermod -aG docker deploy
 sudo mkdir -p /home/deploy
 sudo chown deploy:deploy /home/deploy
-sudo -u deploy git clone git@github.com:YOUR_ORG/YOUR_REPO.git /home/deploy/exchangehub
-sudo cp /home/deploy/exchangehub/deploy/nginx-exchangehub.conf /etc/nginx/sites-available/exchangehub.conf
-sudo ln -s /etc/nginx/sites-available/exchangehub.conf /etc/nginx/sites-enabled/exchangehub.conf
-echo 'upstream exchangehub_backend { server 127.0.0.1:5001; }' | sudo tee /etc/nginx/conf.d/exchangehub-upstream.conf
+sudo -u deploy git clone git@github.com:YOUR_ORG/YOUR_REPO.git /home/deploy/apps/exchangehub
+cd /home/deploy/apps/exchangehub
+sudo cp deploy/nginx-ratehubfx-astro-proxy.conf /etc/nginx/snippets/ratehubfx-astro-proxy.conf
+sudo cp deploy/nginx-exchangehub-astro.conf /etc/nginx/sites-available/exchangehub-astro.conf
+sudo ln -s /etc/nginx/sites-available/exchangehub-astro.conf /etc/nginx/sites-enabled/exchangehub-astro.conf
+echo 'upstream exchangehub_astro_backend { server 127.0.0.1:5003; }' | sudo tee /etc/nginx/conf.d/exchangehub-astro-upstream.conf
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Edit `/etc/nginx/sites-available/exchangehub.conf` and replace `example.com` with your domain. If the deploy user cannot reload Nginx without a password, allow only these commands with sudo:
+The snippet must be in place before the vhost is enabled, or `nginx -t` fails
+on the missing include. Edit the vhost and replace the domain with your own. If
+the deploy user cannot reload Nginx without a password, allow only these
+commands with sudo:
 
 ```text
 deploy ALL=(root) NOPASSWD: /usr/sbin/nginx -t, /usr/sbin/nginx -s reload
@@ -449,33 +463,19 @@ Production traffic goes through Nginx to one active web container. The fetcher c
 
 SEO pair pages
 
-- Python dev server also serves the same SEO-style routes at:
-
-```text
-http://127.0.0.1:5000/vnd-usd
-http://127.0.0.1:5000/vnd-eur
-```
-
-- The WordPress plugin serves virtual SEO pages at:
-
-```text
-/vnd-usd
-/usd-vnd
-/vnd-eur
-```
-
-- Each page renders from the shared pair-page model: latest rate, converter table, chart data, statistics, FAQ, canonical URL, meta description, and JSON-LD FAQ schema.
-- The reusable renderer lives in `wp-plugin-exchange/includes/exchange-rate-core.php`. WordPress is currently the first adapter; another platform can reuse the same model shape: `{base, target, history, latest, stats, amounts}`.
-- Shortcode fallback for any WP page:
-
-```text
-[exchange_rate_pair base="VND" target="USD"]
-```
-
-Mono WP integration (recommended for SEO)
-
-- In local-file mode, the fetcher writes per-pair JSON files and a pre-rendered partial `rates.html` into your WordPress uploads directory. With R2-only mode, those files are written to Cloudflare R2 instead.
-- Use the theme snippet [wp_include_snippet.php](wp_include_snippet.php) to include the `rates.html` partial in your template.
+- Every pair page comes from one model built in `src/lib/pair.ts`: latest rate,
+  converter table, chart series, statistics, explanatory copy and FAQ. The head
+  tags and JSON-LD are assembled in `src/layouts/Layout.astro`.
+- Each page emits a canonical URL, a meta description carrying the live rate,
+  Open Graph and Twitter card tags, and a JSON-LD graph of Organization,
+  WebSite, WebPage and BreadcrumbList — plus FAQPage and
+  ExchangeRateSpecification on pair pages.
+- `sitemap.xml` reports two kinds of `lastmod`: data pages take the newest
+  stored rate timestamp, the info pages take `INFO_CONTENT_LAST_MODIFIED` from
+  `src/lib/info.ts`. Bump that constant when the copy changes.
+- Because the site translates in the browser rather than serving one URL per
+  language, there is deliberately no `hreflang` and no `og:locale:alternate` —
+  they would point at pages that do not exist.
 
 Permissions and cron
 
@@ -491,40 +491,20 @@ Permissions and cron
 Atomic writes & caching
 
 - `fetch_rates.py` writes to temporary files and `os.replace()` to avoid half-written files.
-- For best performance and SEO, serve the static `rates.html` directly (Nginx will do this) and avoid parsing JSON on every page request. You can also pre-render `rates.html` so the HTML is returned to crawlers without JS.
+- The fetcher still writes a `rates.html` partial beside the JSON. Nothing reads
+  it any more — it existed for the WordPress theme include, which went with the
+  Flask app. Harmless, but do not build anything new on it.
 
-Analytics tracking
+Analytics
 
-- GA4 is installed with measurement ID `G-TN7DJB48VK`.
-- Site-wide engagement events include `site_click`, `pair_link_click`, `outbound_link_click`, `control_change`, `section_view`, and `scroll_depth`.
-- Conversion-style events include `contact_submit_success`, `form_submit_attempt`, `home_chart_series_loaded`, and `chart_tool_loaded`.
-- Reliability and performance events include `api_request_error`, `api_request_exception`, `js_error`, `js_unhandled_rejection`, `web_vital_lcp`, `web_vital_cls`, and `web_vital_inp`.
-- In GA4, mark `contact_submit_success` as a key event. Optionally mark `pair_link_click` and `chart_tool_loaded` if pair navigation and chart usage are important goals.
-
-Next steps
-
-- If you want, I can: (A) adjust `fetch_rates.py` to fetch more pairs, (B) add automatic pruning settings, or (C) create a small WP plugin wrapper around the snippet. Tell me which.
- 
-Docker (run both web and fetcher)
-
-1. Build and run with docker-compose (example):
-
-```bash
-# set OPENEXCHANGE_APP_ID or OPENEXCHANGE_APP_IDS env, or put into an .env file
-docker-compose up --build -d
-```
-
-2. The compose configuration runs two services:
-- `web`: serves `app.py` on port 5000 as container `exchangehub-web`.
-- `fetcher`: runs `fetch_rates.py` every 5 minutes as container `exchangehub-fetcher`. With `R2_ENABLED=true` and `LOCAL_STORAGE_ENABLED=false`, it reads and writes R2 only. With `LOCAL_STORAGE_ENABLED=true`, it also writes to `wp-content/uploads`.
-
-3. Example to run with your real WP uploads path (host):
-
-```bash
-OPENEXCHANGE_APP_IDS=APP_ID_1,APP_ID_2,APP_ID_3 docker-compose up --build -d
-```
-
-4. To map uploads to your WordPress installation for local-file mode, edit `docker-compose.yml` volumes to mount the correct host path to `/app/wp-content/uploads`. This is not required for R2-only mode.
+**There is none.** The Flask app carried a GA4 tag and about fifteen custom
+events, including Web Vitals, `js_error` and `contact_submit_success`. None of
+that was carried over to the Astro site, so real-user performance and
+conversion data stopped at the cutover. Cloudflare Analytics still covers
+traffic, bandwidth, cache hit ratio and security events without any tag, and
+the nginx access log feeds `deploy/goaccess-report.sh`. Re-adding a tag is a
+decision, not an oversight to fix silently: it changes what the privacy policy
+has to disclose and what a consent banner has to gate.
 
 Cloudflare
 
@@ -543,31 +523,29 @@ python3 scripts/cloudflare_setup.py                         # report, changes no
 python3 scripts/cloudflare_setup.py --cache-rule --apply    # cache HTML at the edge
 ```
 
-The nginx side lives in `deploy/nginx-exchangehub.conf` and is **not** deployed
-by pushing -- `deploy_astro.sh` only rewrites the blue/green upstream. Copy
-it to `/etc/nginx/sites-enabled/exchangehub.conf` and reload.
+The nginx side lives in `deploy/nginx-exchangehub-astro.conf` and is **not**
+deployed by pushing -- `deploy_astro.sh` only rewrites the blue/green upstream.
+Copy it to `/etc/nginx/sites-available/` and symlink it, as in the bootstrap
+above.
 
 Monitoring and hardening
 
 Already collected, and mostly unused:
 
-- **Google Analytics** is embedded and reports 15 custom events, including Web
-  Vitals (`web_vital_lcp`, `web_vital_cls`, `web_vital_inp`), `js_error`,
-  `api_request_error` and `contact_submit_success`. Real-user performance data
-  is already there; look under Reports -> Engagement -> Events.
 - **Cloudflare Analytics** covers traffic, bandwidth, cache hit ratio and
-  Security Events for free.
+  Security Events for free, with no tag on the page. It is the only analytics
+  this site has — see "Analytics" above.
 
-Added by `deploy/nginx-exchangehub.conf`:
+Added by `deploy/nginx-exchangehub-astro.conf`:
 
-- `log_format ratehubfx` keeps nginx's `combined` prefix and appends `host=`,
+- `log_format ratehubfx_astro` keeps nginx's `combined` prefix and appends `host=`,
   `rt=` (what the visitor waited) and `urt=` (what the app took). The gap
   between the two is nginx plus network.
 - Security headers on every response, errors included: HSTS,
   `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
   `Permissions-Policy`. **No CSP** -- the app inlines its scripts and styles and
-  loads gtag, jsdelivr and Google Translate, so a policy that is both useful and
-  non-breaking has to be worked out rather than guessed at.
+  loads jsdelivr, Google Fonts and Google Translate, so a policy that is both
+  useful and non-breaking has to be worked out rather than guessed at.
 - Rate limits on `/contact` (10 r/m, it sends mail) and `/api/` (300 r/m with a
   burst, since one page load fires five or six calls). Both return 429.
 
@@ -587,8 +565,37 @@ The report lists visitor addresses and every URL requested. Keep it behind a
 password or read it locally over `scp`; do not serve it from a public vhost.
 
 
-WP plugin (module) usage
+Ad network review
 
-- A simple plugin module is included at `wp-plugin-exchange/exchange-plugin.php`. To use it in your WordPress site, copy the `wp-plugin-exchange` folder into `wp-content/plugins/` and activate the plugin.
-- Create posts of type "Exchange Pages" (in admin menu) for per-pair content. Use slugs like `vnd-usd` to match pair names.
-- Place the shortcode `[exchange_rates_tabs]` on your homepage or any page to display the tabbed chart module. The module reads `rates.json` from the uploads folder to render charts.
+Before applying to an ad network, the site has to look like a publisher rather
+than a page generator. What is already in place: About, Contact, Privacy
+Policy, Terms and Disclaimer, linked from the footer of every page and each
+carrying a "Last updated" date; the privacy copy names Google as a third-party
+vendor, explains the cookies the site sets itself, and links the opt-outs; the
+disclaimer states plainly that the rates are reference data and not advice.
+
+Two things still need a decision.
+
+**A consent management platform.** Google's EU user consent policy requires a
+certified CMP before serving ads to visitors in the EEA, the UK or
+Switzerland. The site sets a language cookie, the translation widget's cookie
+and the contact form's anti-automation cookie, none of which are currently
+gated behind consent. Google's own CMP is configured in the AdSense interface
+and needs no code here; a third-party CMP would.
+
+**The long-tail pair pages.** `NOINDEX_LONGTAIL_PAIRS=true` marks every pair
+outside the header menu `noindex` and drops it from `sitemap.xml`, leaving the
+38 curated pairs — see `pairIsNoindex` in `src/lib/config.ts`. The pages it
+hides are one template with the currency names swapped, which is what a
+reviewer reads as scaled content. They stay reachable and keep working for
+visitors; they simply stop being submitted for indexing. Turn the variable off
+again once those pairs carry writing of their own.
+
+`ads.txt` is deliberately absent. A file listing no authorised sellers is
+worse than no file at all — buyers read it as "nobody may sell this
+inventory". Create `public/ads.txt` with the real line once the publisher ID
+exists:
+
+```text
+google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
+```
