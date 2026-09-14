@@ -1,6 +1,8 @@
 ---
 import { siteOrigin, SITE_NAME, SITE_ALTERNATE_NAME } from "../lib/site";
 import { resolveVisitorLocale } from "../lib/geo";
+import "../styles/fonts.css";
+import "../styles/components.css";
 import "../styles/responsive.css";
 
 interface Props {
@@ -21,13 +23,13 @@ const {
   extraSchemaNodes = [], ogImage, noindex = false,
 } = Astro.props;
 
-// The CJK faces are only ever applied to Google-translated text — see the
-// html[lang^="zh"] / [lang^="ja"] rules in Header.astro — but asking for them
-// in the stylesheet costs every visitor dearly: Noto Sans SC and JP are split
-// into hundreds of unicode-range subsets, which takes the Google Fonts
-// stylesheet from 26 KB to 932 KB, and it is render-blocking. So they are
-// requested only for a visitor who is already on Chinese or Japanese; picking
-// either by hand injects the stylesheet at that point (Header.astro).
+// The CJK faces are the one part still served by Google. Unlike the latin
+// families in styles/fonts.css they are not worth self-hosting: Noto Sans SC
+// and JP are split into hundreds of unicode-range subsets and run to hundreds
+// of megabytes in full, and they are only ever applied to Google-translated
+// text anyway — see the html[lang^="zh"] / [lang^="ja"] rules in Header.astro.
+// So the stylesheet is requested only for a visitor who is already on Chinese
+// or Japanese; picking either by hand injects it at that point (Header.astro).
 const visitorLang = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_lang")?.value).lang;
 const needsCjkFonts = visitorLang === "zh-CN" || visitorLang === "ja";
 
@@ -146,12 +148,20 @@ const schema = {
          (Slack, Discord, LinkedIn) do not all do that. -->
     <meta name="twitter:image" content={ogImageUrl} />
     <meta name="twitter:image:alt" content={title} />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap"
-    />
+    <!-- The faces themselves are declared in src/styles/fonts.css, which rides
+         the same bundle as the rest of the CSS. Only the two that carry the
+         first screen are preloaded: Manrope is the body face set below, Space
+         Grotesk every heading above the fold. `font-display: swap` paints the
+         fallback immediately, so what a preload buys is not the first paint
+         but the swap -- without it the largest text block repaints when the
+         face lands, and LCP is measured at that repaint rather than the paint
+         before it. The remaining faces (the other subsets, Source Sans 3, IBM
+         Plex Mono) are left to the normal unicode-range fetch: preloading a
+         file the page may not draw with costs more than it saves. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+      href="/fonts/manrope-400-800-latin.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+      href="/fonts/space-grotesk-500-700-latin.woff2" />
     {needsCjkFonts && (
       <link
         id="cjk-fonts"

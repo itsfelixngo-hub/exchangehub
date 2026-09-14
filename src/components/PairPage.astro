@@ -161,7 +161,7 @@ const TOOL_TABS = [
                     style="display:flex; width:100%; align-items:center; justify-content:space-between; gap:10px; border:1px solid #e6e1de; border-radius:10px; padding:12px 14px; background:#fff; cursor:pointer; font-family:inherit;"
                   >
                     <span style="display:flex; align-items:center; gap:8px; font-weight:700; color:#14100f; font-size:15px;">
-                      <img src={flagSrc(field.code)} alt="" width="22" height="22" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
+                      <img src={flagSrc(field.code)} alt="" width="22" height="22" class="flag-ico" loading="lazy" decoding="async" />
                       <span translate="no">{field.code}</span> - <span>{field.name}</span>
                     </span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6560" stroke-width="2.4" set:html={CHEVRON_DOWN} />
@@ -176,7 +176,7 @@ const TOOL_TABS = [
                         href={field.side === "from" ? pairUrl(code, target) : pairUrl(base, code)}
                         style={`display:${code === (field.side === "from" ? target : base) ? "none" : "flex"}; align-items:center; gap:8px; border-radius:8px; padding:8px; font-size:13px; color:#14100f; background:${code === field.code ? "#f4f1ee" : "transparent"};`}
                       >
-                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
+                        <img src={flagSrc(code)} alt="" width="20" height="20" class="flag-ico" loading="lazy" decoding="async" />
                         <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
                       </a>
                     ))}

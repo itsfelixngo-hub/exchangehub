@@ -14,6 +14,28 @@ import {
   resolveVisitorLocale, currencyForCountry, countryForLanguage, SUPPORTED_LANGUAGES,
 } from "../lib/geo";
 
+// The converter and the rate board each drive a currency picker, and both need
+// the same three lookup tables. They used to arrive through `define:vars` on
+// each script, which has two costs: `define:vars` forces the script inline, so
+// the browser re-downloads ~25 KB of unchanging logic on every navigation (the
+// HTML is deliberately `no-cache` — see src/middleware.ts), and the tables are
+// serialised twice into the same document.
+//
+// Emitting them once as a JSON island lets both scripts become ordinary
+// bundled scripts: Astro hashes them into /_astro/, where they are cached
+// `immutable` and fetched once for the whole visit.
+//
+// Only `name` is carried over from CURRENCY_PROFILES. The `region`, `role` and
+// `use` fields are prose for the server-rendered copy and no client script
+// reads them, but they were the bulk of what went over the wire.
+const currencyMeta = JSON.stringify({
+  names: Object.fromEntries(configCurrencies().map((c) => [c, CURRENCY_PROFILES[c]?.name ?? c])),
+  flags: Object.fromEntries(configCurrencies().map((c) => [c, flagSrc(c)])),
+  langCurrency: Object.fromEntries(
+    SUPPORTED_LANGUAGES.map((lang) => [lang, currencyForCountry(countryForLanguage(lang)) ?? "USD"]),
+  ),
+});
+
 // Everything country-specific on this page — the rate board, the converter
 // and the hero chart — follows the visitor's country. The IP header decides
 // the first render; a language the visitor picks by hand outranks it from
@@ -117,9 +139,9 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               style={`display:${model.hero.secondary.length > 0 ? "grid" : "none"}; grid-template-columns:repeat(${model.hero.secondary.length || 3},1fr); gap:10px; margin-top:22px;`}
             >
               {model.hero.secondary.map((item) => (
-                <a href={item.href} style="background:rgba(255,255,255,0.04); border:1px solid #2a2426; border-radius:12px; padding:12px; display:block;">
-                  <div translate="no" style="font-size:11px; color:#a79fa0;">{item.label}</div>
-                  <div translate="no" style="font-size:15px; font-weight:600; margin-top:4px; color:#f5f2f1;">{item.rate}</div>
+                <a href={item.href} class="rate-card">
+                  <div translate="no" class="rate-card-label">{item.label}</div>
+                  <div translate="no" class="rate-card-value">{item.rate}</div>
                 </a>
               ))}
             </div>
@@ -139,15 +161,15 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 </div>
                 <div style="position:relative;">
                   <button type="button" id="conv-from-btn" data-code={converterFrom} style="display:inline-flex; align-items:center; gap:8px; background:transparent; border:none; cursor:pointer; padding:0;">
-                    <img class="conv-flag" src={flagSrc(converterFrom)} alt="" width="24" height="24" style="display:block; flex:0 0 auto;" />
+                    <img class="conv-flag flag-ico" src={flagSrc(converterFrom)} alt="" width="24" height="24" />
                     <span class="conv-code" translate="no" style="font-weight:700; color:#14100f; font-size:15px;">{converterFrom}</span>
                     <span class="conv-name" style="color:#6b6560; font-size:14px;">{CURRENCY_PROFILES[converterFrom]?.name}</span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6560" stroke-width="2.4" set:html={CHEVRON_DOWN} />
                   </button>
                   <div id="conv-from-panel" class="conv-panel picker-scroll" style="display:none; position:absolute; right:0; top:calc(100% + 8px); z-index:30; width:220px; max-height:260px; overflow-y:auto; background:#fff; border:1px solid #e6e1de; border-radius:10px; box-shadow:0 16px 40px rgba(15,23,42,.14); padding:6px;">
                     {configCurrencies().map((code) => (
-                      <button type="button" class="conv-option" data-code={code} style="display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; border-radius:8px; padding:7px 8px; cursor:pointer; text-align:left; font-size:13px; color:#14100f;">
-                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
+                      <button type="button" class="conv-option picker-row" data-code={code}>
+                        <img src={flagSrc(code)} alt="" width="20" height="20" class="flag-ico" loading="lazy" decoding="async" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
                       </button>
                     ))}
                   </div>
@@ -160,15 +182,15 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 <span class="conv-result" style="font-size:32px; font-weight:800; color:#14100f;"><span id="conv-result-symbol" translate="no">{currencySymbol(converterTarget)}</span><span id="conv-result" translate="no">{converterRate ? formatRate(converterRate) : "—"}</span></span>
                 <div style="position:relative;">
                   <button type="button" id="conv-to-btn" data-code={converterTarget} style="display:inline-flex; align-items:center; gap:8px; background:transparent; border:none; cursor:pointer; padding:0;">
-                    <img class="conv-flag" src={flagSrc(converterTarget)} alt="" width="24" height="24" style="display:block; flex:0 0 auto;" />
+                    <img class="conv-flag flag-ico" src={flagSrc(converterTarget)} alt="" width="24" height="24" />
                     <span class="conv-code" translate="no" style="font-weight:700; color:#14100f; font-size:15px;">{converterTarget}</span>
                     <span class="conv-name" style="color:#6b6560; font-size:14px;">{CURRENCY_PROFILES[converterTarget]?.name}</span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b6560" stroke-width="2.4" set:html={CHEVRON_DOWN} />
                   </button>
                   <div id="conv-to-panel" class="conv-panel picker-scroll" style="display:none; position:absolute; right:0; top:calc(100% + 8px); z-index:30; width:220px; max-height:260px; overflow-y:auto; background:#fff; border:1px solid #e6e1de; border-radius:10px; box-shadow:0 16px 40px rgba(15,23,42,.14); padding:6px;">
                     {configCurrencies().map((code) => (
-                      <button type="button" class="conv-option" data-code={code} style="display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; border-radius:8px; padding:7px 8px; cursor:pointer; text-align:left; font-size:13px; color:#14100f;">
-                        <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
+                      <button type="button" class="conv-option picker-row" data-code={code}>
+                        <img src={flagSrc(code)} alt="" width="20" height="20" class="flag-ico" loading="lazy" decoding="async" /> <span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}
                       </button>
                     ))}
                   </div>
@@ -195,36 +217,43 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             <span>We use the mid-market rate for this converter. It is for informational purposes only.</span>
           </div>
         </div>
-        <script define:vars={{
-          profiles: CURRENCY_PROFILES,
-          flags: Object.fromEntries(configCurrencies().map((c) => [c, flagSrc(c)])),
-          langCurrency: Object.fromEntries(
-            SUPPORTED_LANGUAGES.map((lang) => [lang, currencyForCountry(countryForLanguage(lang)) ?? "USD"]),
-          ),
-        }}>
+        <!-- Read by both this page's scripts; see currencyMeta above. -->
+        <script type="application/json" id="currency-meta" is:inline set:html={currencyMeta} />
+        <script>
           (function () {
             const card = document.getElementById("conv-card");
-            if (!card) return;
-            const rates = JSON.parse(card.dataset.rates || "{}");
-            const amountInput = document.getElementById("conv-amount");
+            const metaEl = document.getElementById("currency-meta");
+            if (!card || !metaEl) return;
+            const meta = JSON.parse(metaEl.textContent || "{}") as {
+              names: Record<string, string>;
+              flags: Record<string, string | null>;
+              langCurrency: Record<string, string>;
+            };
+            const names = meta.names, flags = meta.flags, langCurrency = meta.langCurrency;
+            const rates = JSON.parse(card.dataset.rates || "{}") as Record<string, number>;
+            const amountInput = document.getElementById("conv-amount") as HTMLInputElement | null;
             const resultEl = document.getElementById("conv-result");
             const amountSymbolEl = document.getElementById("conv-amount-symbol");
             const resultSymbolEl = document.getElementById("conv-result-symbol");
             const summaryEl = document.getElementById("conv-summary");
-            const fullLink = document.getElementById("conv-full-link");
+            const fullLink = document.getElementById("conv-full-link") as HTMLAnchorElement | null;
             const fromBtn = document.getElementById("conv-from-btn");
             const toBtn = document.getElementById("conv-to-btn");
             const fromPanel = document.getElementById("conv-from-panel");
             const toPanel = document.getElementById("conv-to-panel");
+            // Everything below drives one widget: without any of these parts
+            // there is nothing to wire up, and checking once here keeps the
+            // handlers free of repeated null guards.
+            if (!amountInput || !resultEl || !summaryEl || !fromBtn || !toBtn || !fromPanel || !toPanel) return;
 
-            function rateFor(base, target) {
+            function rateFor(base: string, target: string) {
               const b = rates[base];
               const t = rates[target];
               if (!b || !t) return null;
               return t / b;
             }
 
-            function formatRate(value) {
+            function formatRate(value: number) {
               const num = Number(value);
               const abs = Math.abs(num);
               if (num === 0) return "0";
@@ -233,18 +262,19 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             }
 
-            function setButtonCode(btn, code) {
+            function setButtonCode(btn: HTMLElement, code: string) {
               btn.dataset.code = code;
-              const flagImg = btn.querySelector(".conv-flag");
+              const flagImg = btn.querySelector<HTMLImageElement>(".conv-flag");
               const codeSpan = btn.querySelector(".conv-code");
               const nameSpan = btn.querySelector(".conv-name");
-              if (flagImg && flags[code]) flagImg.src = flags[code];
+              const flagSrc = flags[code];
+              if (flagImg && flagSrc) flagImg.src = flagSrc;
               if (codeSpan) codeSpan.textContent = code;
-              if (nameSpan) nameSpan.textContent = (profiles[code] && profiles[code].name) || "";
+              if (nameSpan) nameSpan.textContent = names[code] || "";
             }
 
-            const symbolCache = {};
-            function symbolFor(code) {
+            const symbolCache: Record<string, string> = {};
+            function symbolFor(code: string) {
               if (symbolCache[code] !== undefined) return symbolCache[code];
               let symbol = code;
               try {
@@ -259,9 +289,12 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               return symbol;
             }
 
-            function recompute() {
-              const from = fromBtn.dataset.code;
-              const to = toBtn.dataset.code;
+            // Arrow functions rather than declarations: a hoisted `function`
+            // is typed as if it could run before the guard above, so none of
+            // the elements it closes over count as non-null inside it.
+            const recompute = () => {
+              const from = fromBtn.dataset.code || "";
+              const to = toBtn.dataset.code || "";
               const amount = parseFloat(amountInput.value) || 0;
               const rate = rateFor(from, to);
               if (rate === null) {
@@ -274,9 +307,9 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               if (amountSymbolEl) amountSymbolEl.textContent = symbolFor(from);
               if (resultSymbolEl) resultSymbolEl.textContent = symbolFor(to);
               if (fullLink) fullLink.href = `/${from.toLowerCase()}-${to.toLowerCase()}`;
-            }
+            };
 
-            function wirePanel(btn, panel, onPick) {
+            const wirePanel = (btn: HTMLElement, panel: HTMLElement, onPick: (code: string) => void) => {
               btn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 const isOpen = panel.style.display === "block";
@@ -284,14 +317,14 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 toPanel.style.display = "none";
                 panel.style.display = isOpen ? "none" : "block";
               });
-              panel.querySelectorAll(".conv-option").forEach((opt) => {
+              panel.querySelectorAll<HTMLElement>(".conv-option").forEach((opt) => {
                 opt.addEventListener("click", () => {
-                  onPick(opt.dataset.code);
+                  onPick(opt.dataset.code || "");
                   panel.style.display = "none";
                   recompute();
                 });
               });
-            }
+            };
 
             wirePanel(fromBtn, fromPanel, (code) => setButtonCode(fromBtn, code));
             wirePanel(toBtn, toPanel, (code) => setButtonCode(toBtn, code));
@@ -300,9 +333,9 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               toPanel.style.display = "none";
             });
             amountInput.addEventListener("input", recompute);
-            document.getElementById("conv-swap").addEventListener("click", () => {
-              const fromCode = fromBtn.dataset.code;
-              const toCode = toBtn.dataset.code;
+            document.getElementById("conv-swap")?.addEventListener("click", () => {
+              const fromCode = fromBtn.dataset.code || "";
+              const toCode = toBtn.dataset.code || "";
               setButtonCode(fromBtn, toCode);
               setButtonCode(toBtn, fromCode);
               recompute();
@@ -311,7 +344,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             // Picking a language re-points the country-specific data: the IP
             // country only decides the first render, an explicit choice wins
             // from then on (the server applies the same rule via cookie).
-            function directionColors(direction) {
+            function directionColors(direction: string) {
               if (direction === "up") return { bg: "rgba(52,211,153,0.14)", fg: "#34d399" };
               if (direction === "down") return { bg: "rgba(225,29,63,0.14)", fg: "#ff4d6d" };
               return { bg: "rgba(255,255,255,.06)", fg: "#a79fa0" };
@@ -323,54 +356,71 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             // Only the newest request may touch the DOM.
             let heroRequest = 0;
 
-            function updateHero(base, target) {
+            function updateHero(base: string, target: string) {
               const line = document.getElementById("hero-line");
-              if (!line) return;
+              const pairBase = document.getElementById("hero-pair-base");
+              const pairTarget = document.getElementById("hero-pair-target");
+              const rateEl = document.getElementById("hero-rate");
+              const changeText = document.getElementById("hero-change-text");
+              const badge = document.getElementById("hero-change");
+              const arrow = document.getElementById("hero-change-arrow");
+              const area = document.getElementById("hero-area");
+              const dot = document.getElementById("hero-dot");
+              // The hero is one block of markup: either the whole set is on the
+              // page or none of it is, so one guard stands in for nine.
+              if (!line || !pairBase || !pairTarget || !rateEl || !changeText
+                  || !badge || !arrow || !area || !dot) return;
               const token = ++heroRequest;
               fetch(`/api/hero?base=${encodeURIComponent(base)}&target=${encodeURIComponent(target)}`)
                 .then((res) => (res.ok ? res.json() : null))
                 .then((data) => {
                   if (token !== heroRequest) return;
                   if (!data || !data.points) return;
-                  document.getElementById("hero-pair-base").textContent = base;
-                  document.getElementById("hero-pair-target").textContent = target;
-                  document.getElementById("hero-rate").textContent = data.rate;
-                  document.getElementById("hero-change-text").textContent = data.changeLabel;
+                  pairBase.textContent = base;
+                  pairTarget.textContent = target;
+                  rateEl.textContent = data.rate;
+                  changeText.textContent = data.changeLabel;
                   const c = directionColors(data.direction);
-                  const badge = document.getElementById("hero-change");
                   badge.style.background = c.bg;
                   badge.style.color = c.fg;
-                  const arrow = document.getElementById("hero-change-arrow");
                   arrow.style.display = data.direction === "flat" ? "none" : "";
                   arrow.style.transform = data.direction === "down" ? "rotate(180deg)" : "";
                   line.setAttribute("points", data.points);
-                  document.getElementById("hero-area").setAttribute("points", `0,88 ${data.points} 400,88`);
-                  document.getElementById("hero-dot").style.top = data.dotY + "%";
+                  area.setAttribute("points", `0,88 ${data.points} 400,88`);
+                  dot.style.top = data.dotY + "%";
 
                   const tiles = document.getElementById("hero-tiles");
                   const items = data.secondary || [];
                   if (tiles) {
                     tiles.style.display = items.length ? "grid" : "none";
                     tiles.style.gridTemplateColumns = `repeat(${items.length || 3},1fr)`;
-                    tiles.innerHTML = items.map((item) => `
-                      <a href="${item.href}" style="background:rgba(255,255,255,0.04); border:1px solid #2a2426; border-radius:12px; padding:12px; display:block;">
-                        <div translate="no" style="font-size:11px; color:#a79fa0;">${item.label}</div>
-                        <div translate="no" style="font-size:15px; font-weight:600; margin-top:4px; color:#f5f2f1;">${item.rate}</div>
+                    tiles.innerHTML = items.map((item: { href: string; label: string; rate: string }) => `
+                      <a href="${item.href}" class="rate-card">
+                        <div translate="no" class="rate-card-label">${item.label}</div>
+                        <div translate="no" class="rate-card-value">${item.rate}</div>
                       </a>`).join("");
                   }
                 })
                 .catch(() => {});
             }
 
-            document.addEventListener("sitelang:change", (event) => {
-              const from = langCurrency[event.detail.lang];
+            const applyLang = (lang: string | undefined) => {
+              const from = lang ? langCurrency[lang] : undefined;
               if (!from) return;
               const to = from === "USD" ? "EUR" : "USD";
               setButtonCode(fromBtn, from);
               setButtonCode(toBtn, to);
               recompute();
               updateHero(from, to);
+            };
+
+            document.addEventListener("sitelang:change", (event) => {
+              applyLang((event as CustomEvent<{ lang: string }>).detail.lang);
             });
+            // The header commits the language from its own deferred module,
+            // which runs before this one — so a commit that has already
+            // happened left the language here rather than in an event.
+            applyLang(document.documentElement.dataset.siteLang);
           })();
         </script>
 
@@ -417,7 +467,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                       data-search={`${code} ${CURRENCY_PROFILES[code]?.name ?? ""}`.toLowerCase()}
                       style={`display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:8px; background:${code === quote ? "#1c191b" : "transparent"}; cursor:pointer;`}
                     >
-                      <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
+                      <img src={flagSrc(code)} alt="" width="20" height="20" class="flag-ico" loading="lazy" decoding="async" />
                       <span class="picker-option-label" style={`color:${code === quote ? "#f5f2f1" : "#a79fa0"}; font-size:13px; flex:1;`}><span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}</span>
                       {code === quote && <svg class="picker-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff4d6d" stroke-width="2.6"><path d="M5 13l4 4L19 7" /></svg>}
                     </div>
@@ -434,7 +484,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                       data-search={`${code} ${CURRENCY_PROFILES[code]?.name ?? ""}`.toLowerCase()}
                       style={`display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:8px; background:${code === quote ? "#1c191b" : "transparent"}; cursor:pointer;`}
                     >
-                      <img src={flagSrc(code)} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
+                      <img src={flagSrc(code)} alt="" width="20" height="20" class="flag-ico" loading="lazy" decoding="async" />
                       <span class="picker-option-label" style={`color:${code === quote ? "#f5f2f1" : "#a79fa0"}; font-size:13px;`}><span translate="no">{code}</span> {CURRENCY_PROFILES[code]?.name}</span>
                     </div>
                   ))}
@@ -481,24 +531,26 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
           </div>
         </div>
 
-        <script define:vars={{
-          flags: Object.fromEntries(configCurrencies().map((c) => [c, flagSrc(c)])),
-          profiles: CURRENCY_PROFILES,
-          langCurrency: Object.fromEntries(
-            SUPPORTED_LANGUAGES.map((lang) => [lang, currencyForCountry(countryForLanguage(lang)) ?? "USD"]),
-          ),
-        }}>
+        <script>
           (function () {
-            const searchInput = document.getElementById("quote-picker-search");
+            const metaEl = document.getElementById("currency-meta");
+            if (!metaEl) return;
+            const meta = JSON.parse(metaEl.textContent || "{}") as {
+              names: Record<string, string>;
+              flags: Record<string, string | null>;
+              langCurrency: Record<string, string>;
+            };
+            const names = meta.names, flags = meta.flags, langCurrency = meta.langCurrency;
+            const searchInput = document.getElementById("quote-picker-search") as HTMLInputElement | null;
             const empty = document.getElementById("quote-picker-empty");
-            const groups = Array.from(document.querySelectorAll("#today-rates [data-group]"));
+            const groups = Array.from(document.querySelectorAll<HTMLElement>("#today-rates [data-group]"));
             if (searchInput) {
               searchInput.addEventListener("input", () => {
                 const query = searchInput.value.trim().toLowerCase();
                 let anyVisible = false;
                 for (const group of groups) {
                   let groupHasMatch = false;
-                  for (const option of group.querySelectorAll("[data-picker-option]")) {
+                  for (const option of group.querySelectorAll<HTMLElement>("[data-picker-option]")) {
                     const match = !query || (option.dataset.search || "").includes(query);
                     // Plain `.hidden` loses to this element's own inline
                     // `style="display:flex"` (inline style always outranks
@@ -507,7 +559,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                     option.style.display = match ? "flex" : "none";
                     if (match) groupHasMatch = true;
                   }
-                  const label = group.querySelector(".picker-group-label");
+                  const label = group.querySelector<HTMLElement>(".picker-group-label");
                   if (label) label.hidden = !groupHasMatch;
                   if (groupHasMatch) anyVisible = true;
                 }
@@ -516,20 +568,26 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             }
 
             const rowsList = document.getElementById("rates-rows-list");
+            if (!rowsList) return;
             const ratesEmpty = document.getElementById("rates-empty");
             const loadMore = document.getElementById("rates-load-more");
-            const barFlag = document.getElementById("rates-bar-flag");
+            const barFlag = document.getElementById("rates-bar-flag") as HTMLImageElement | null;
             const barLabel = document.getElementById("rates-bar-label");
             const step = Number((loadMore && loadMore.dataset.step) || "8");
             let shown = step;
 
-            function directionColors(direction) {
+            function directionColors(direction: string) {
               if (direction === "up") return { bg: "rgba(52,211,153,0.14)", fg: "#34d399" };
               if (direction === "down") return { bg: "rgba(225,29,63,0.14)", fg: "#ff4d6d" };
               return { bg: "rgba(255,255,255,.06)", fg: "#a79fa0" };
             }
 
-            function renderRows(rows) {
+            type RateRow = {
+              target: string; rate: string; changeLabel: string;
+              direction: string; points?: string; href: string;
+            };
+
+            const renderRows = (rows: RateRow[]) => {
               rowsList.innerHTML = rows.map((row, i) => {
                 const c = directionColors(row.direction);
                 const border = i < rows.length - 1 ? "border-bottom:1px solid #2a2426;" : "";
@@ -556,12 +614,12 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               shown = step;
               if (ratesEmpty) ratesEmpty.style.display = rows.length === 0 ? "block" : "none";
               if (loadMore) loadMore.style.display = rows.length > step ? "block" : "none";
-            }
+            };
 
             if (loadMore) {
               loadMore.addEventListener("click", () => {
                 shown += step;
-                const rows = rowsList.querySelectorAll("[data-rate-row]");
+                const rows = rowsList.querySelectorAll<HTMLElement>("[data-rate-row]");
                 rows.forEach((row, i) => {
                   if (i < shown) row.style.display = "flex";
                 });
@@ -569,11 +627,11 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               });
             }
 
-            function setActiveOption(code) {
-              document.querySelectorAll("[data-picker-option]").forEach((el) => {
+            const setActiveOption = (code: string) => {
+              document.querySelectorAll<HTMLElement>("[data-picker-option]").forEach((el) => {
                 const active = el.dataset.code === code;
                 el.style.background = active ? "#1c191b" : "transparent";
-                const label = el.querySelector(".picker-option-label");
+                const label = el.querySelector<HTMLElement>(".picker-option-label");
                 if (label) label.style.color = active ? "#f5f2f1" : "#a79fa0";
                 const existingCheck = el.querySelector(".picker-check");
                 if (existingCheck) existingCheck.remove();
@@ -584,17 +642,18 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                   );
                 }
               });
-            }
+            };
 
             // Same guard as the hero chart: a slow reply for a currency the
             // visitor has already switched away from must not repaint the
             // board over the newer one.
             let rowsRequest = 0;
 
-            function selectQuote(code) {
+            const selectQuote = (code: string) => {
               setActiveOption(code);
-              if (barFlag && flags[code]) barFlag.src = flags[code];
-              if (barLabel) barLabel.textContent = `${(profiles[code] && profiles[code].name) || code} (${code})`;
+              const barFlagSrc = flags[code];
+              if (barFlag && barFlagSrc) barFlag.src = barFlagSrc;
+              if (barLabel) barLabel.textContent = `${names[code] || code} (${code})`;
               const token = ++rowsRequest;
               fetch(`/api/rates?quote=${encodeURIComponent(code)}`)
                 .then((res) => res.json())
@@ -603,7 +662,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                   renderRows(data.rows || []);
                 })
                 .catch(() => {});
-            }
+            };
 
             // On mobile the currency picker has no room beside the rows, so
             // it collapses into a panel the base-currency bar opens. The
@@ -620,7 +679,10 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             const todayRates = document.getElementById("today-rates");
             if (todayRates) {
               todayRates.addEventListener("click", (event) => {
-                const option = event.target.closest("[data-picker-option]");
+                const target = event.target;
+                const option = target instanceof Element
+                  ? target.closest<HTMLElement>("[data-picker-option]")
+                  : null;
                 if (!option || !todayRates.contains(option)) return;
                 const code = option.dataset.code;
                 if (!code) return;
@@ -633,10 +695,17 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
 
             // The board is country data too, so a language pick re-points it
             // the same way the IP country did on first render.
-            document.addEventListener("sitelang:change", (event) => {
-              const code = langCurrency[event.detail.lang];
+            const applyLangToBoard = (lang: string | undefined) => {
+              const code = lang ? langCurrency[lang] : undefined;
               if (code) selectQuote(code);
+            };
+
+            document.addEventListener("sitelang:change", (event) => {
+              applyLangToBoard((event as CustomEvent<{ lang: string }>).detail.lang);
             });
+            // Same reason as the converter above: the header may have committed
+            // the language before this module existed to hear it.
+            applyLangToBoard(document.documentElement.dataset.siteLang);
           })();
         </script>
       </div>

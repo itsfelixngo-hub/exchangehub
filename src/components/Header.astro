@@ -78,7 +78,7 @@ const navLinks: { label: string; href: string }[] = [
                 data-flag={lang.flag}
                 style="display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; border-radius:8px; padding:7px 8px; color:#1a1614; cursor:pointer; text-align:left; font-size:13px;"
               >
-                <img src={lang.flag} alt="" width="20" height="20" style="display:block; flex:0 0 auto;" loading="lazy" decoding="async" />
+                <img src={lang.flag} alt="" width="20" height="20" class="flag-ico" loading="lazy" decoding="async" />
                 {lang.label}
               </button>
             ))}
@@ -283,6 +283,12 @@ const navLinks: { label: string; href: string }[] = [
     const option = document.querySelector<HTMLElement>(`.translate-option[data-lang="${code}"]`);
     if (option) updateToggleUi(option);
     ensureCjkFonts(code);
+    // Recorded as well as announced. Both this script and the listeners on the
+    // home page are deferred modules, and this one runs first — so when the
+    // widget happens to be ready on the first pump (a warm cache), commit()
+    // fires before those listeners exist and the event alone would be lost.
+    // A listener that also reads this on startup cannot miss the language.
+    document.documentElement.dataset.siteLang = code;
     document.dispatchEvent(new CustomEvent("sitelang:change", { detail: { lang: code } }));
   }
 

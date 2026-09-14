@@ -1,0 +1,71 @@
+/* Classes for the markup that repeats — the currency chips, the picker rows,
+ * the flag icons, the analysis cards.
+ *
+ * These pages were written with the styling on `style=` attributes, which is
+ * fine while a rule appears once but not when the same declaration is stamped
+ * onto several dozen elements: the home page carried 595 of them, 49% of the
+ * document, and the HTML is deliberately `no-cache` (src/middleware.ts), so
+ * every one of those bytes went over the wire again on every navigation. The
+ * declarations here are identical to the attributes they replace; what changes
+ * is that they are sent once, in a hashed bundle cached `immutable`.
+ *
+ * Only the repeats moved. A one-off `style=` is still the clearest place for
+ * a value used once, and those were left alone.
+ */
+
+/* One flag, drawn at a fixed size inside a flex row. The single most repeated
+ * declaration on the site: 89 copies on the home page alone. */
+.flag-ico {
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* The currency links in the footer, and anywhere else a bare code is shown as
+ * a chip. 27 per page, on every page. */
+.ccy-chip {
+  display: inline-block;
+  border: 1px solid #2a2426;
+  border-radius: 8px;
+  background: #151315;
+  color: #a79fa0;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 11px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+/* A row in a currency dropdown: flag, code, name. The panels sit on a light
+ * surface, hence the dark text. */
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  padding: 7px 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: #14100f;
+}
+
+/* The 24H tiles on /analysis and under the home hero. */
+.rate-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #2a2426;
+  border-radius: 12px;
+  padding: 12px;
+  display: block;
+}
+.rate-card-label {
+  font-size: 11px;
+  color: #a79fa0;
+}
+.rate-card-value {
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 4px;
+  color: #f5f2f1;
+}

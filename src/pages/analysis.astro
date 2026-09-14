@@ -172,9 +172,9 @@ const lineColor = (direction?: "up" | "down" | "flat") =>
                 {secondary.length > 0 && (
                   <div style={`display:grid; grid-template-columns:repeat(${secondary.length},1fr); gap:10px; margin-top:20px;`}>
                     {secondary.map((item) => (
-                      <a href={item.href} style="background:rgba(255,255,255,0.04); border:1px solid #2a2426; border-radius:12px; padding:12px; display:block;">
-                        <div translate="no" style="font-size:11px; color:#a79fa0;">{item.label}</div>
-                        <div translate="no" style="font-size:15px; font-weight:600; margin-top:4px; color:#f5f2f1;">{item.rate}</div>
+                      <a href={item.href} class="rate-card">
+                        <div translate="no" class="rate-card-label">{item.label}</div>
+                        <div translate="no" class="rate-card-value">{item.rate}</div>
                       </a>
                     ))}
                   </div>
