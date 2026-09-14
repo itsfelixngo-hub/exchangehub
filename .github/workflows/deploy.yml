@@ -111,6 +111,17 @@ jobs:
           # a real page request proves the container can reach R2. Verify, then
           # set it back to 'true' (or delete the variable) and re-run Deploy.
           SWITCH_NGINX: ${{ vars.SWITCH_NGINX || 'true' }}
+          # The mailserver and the fetcher are shared by both stacks — one
+          # container name each, whichever deploy ran last owns it. During the
+          # cutover main still deploys them, and recreating them from here
+          # would restart the fetcher and interrupt mail for no reason: this
+          # branch changes only the web tier. So it defaults to off.
+          #
+          # Set the repository variable DEPLOY_FETCHER_MAIL to 'true' once main
+          # is retired — after that nothing else deploys them, and leaving this
+          # off means the fetcher keeps running forever on whatever image main
+          # last built.
+          DEPLOY_FETCHER_MAIL: ${{ vars.DEPLOY_FETCHER_MAIL || 'false' }}
         run: |
           set -euo pipefail
 
@@ -137,7 +148,14 @@ jobs:
 
           # Mailserver and the single fetcher container. Neither is the
           # website, and neither touches the blue/green ports.
-          scripts/deploy_fetcher_mail.sh
+          if [ "$DEPLOY_FETCHER_MAIL" = "true" ]; then
+            scripts/deploy_fetcher_mail.sh
+          else
+            echo "Skipping the mailserver and fetcher (DEPLOY_FETCHER_MAIL is not 'true')."
+            echo "They keep running as main's deploy left them; this deploy only replaces the web tier."
+            docker ps --filter "name=${APP_NAME}-fetcher" --filter "name=${APP_NAME}-mailserver" \
+              --format '  {{.Names}}\t{{.Image}}\t{{.Status}}' || true
+          fi
 
           # Then the web tier: build, health-check and warm the new Astro
           # container, switch nginx onto it, and only then remove the old Astro
