@@ -58,7 +58,7 @@ Routes the site serves
 | `/api/hero?base=USD&target=VND` | hero chart series for one pair |
 | `/healthz` | liveness plus which build answered; reads no rate data |
 | `/robots.txt` | points at the sitemap index |
-| `/sitemap.xml` | index over `/sitemap-pages.xml`, `/sitemap-currencies.xml` and one `/sitemap-pairs-<code>.xml` per hub |
+| `/sitemap.xml` | index over `/sitemap-pages.xml`, `/sitemap-currencies.xml` and `/sitemap-pairs.xml` |
 
 `/vnd` and `/vnd-usd` sit in the same URL segment, so one dynamic route
 (`src/pages/[slug].astro`) serves both and tells them apart by shape. The URLs

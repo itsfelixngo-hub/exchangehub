@@ -138,7 +138,9 @@ try {
   check("sitemap.xml is an index", sitemap.includes("<sitemapindex"));
   check("index names the pages section", sitemap.includes(`<loc>${SITE}/sitemap-pages.xml</loc>`));
   check("index names the currencies section", sitemap.includes(`<loc>${SITE}/sitemap-currencies.xml</loc>`));
-  check("index names a per-currency pair section", sitemap.includes(`<loc>${SITE}/sitemap-pairs-usd.xml</loc>`));
+  check("index names the pairs section", sitemap.includes(`<loc>${SITE}/sitemap-pairs.xml</loc>`));
+  // Three sections, not one per currency — see the note in src/lib/sitemap.ts.
+  check("index stays at three sections", (sitemap.match(/<sitemap>/g) ?? []).length === 3);
 
   const pagesSection = await (await fetch(`${BASE}/sitemap-pages.xml`)).text();
   check("pages section uses the site origin", pagesSection.includes(`<loc>${SITE}/</loc>`));
@@ -152,9 +154,13 @@ try {
   const analysis = await (await fetch(`${BASE}/analysis`)).text();
   check("analysis links to the currency hubs", analysis.includes('href="/vnd"') && analysis.includes('href="/usd"'));
 
-  const usdPairs = await (await fetch(`${BASE}/sitemap-pairs-usd.xml`)).text();
-  check("pair section lists pair pages", usdPairs.includes(`<loc>${SITE}/usd-vnd</loc>`));
-  check("pair section holds only its own base", !usdPairs.includes(`<loc>${SITE}/eur-gbp</loc>`));
+  const pairsSection = await (await fetch(`${BASE}/sitemap-pairs.xml`)).text();
+  check("pairs section lists a stored pair", pairsSection.includes(`<loc>${SITE}/usd-vnd</loc>`));
+  check("pairs section lists a derived pair", pairsSection.includes(`<loc>${SITE}/vnd-eur</loc>`));
+  check("pairs section holds no duplicates", (() => {
+    const locs = pairsSection.match(/<loc>[^<]+<\/loc>/g) ?? [];
+    return locs.length === new Set(locs).size;
+  })());
 
   const missingSection = await fetch(`${BASE}/sitemap-nope.xml`);
   check("unknown sitemap section 404s", missingSection.status === 404, `got ${missingSection.status}`);

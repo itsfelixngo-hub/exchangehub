@@ -10,9 +10,21 @@ import { buildLatestUsdTable } from "./rates";
  * nest, so a crawler reads the same shape the breadcrumbs describe.
  *
  *   /sitemap.xml               index
- *     /sitemap-pages.xml       home, chart tool, info pages
+ *     /sitemap-pages.xml       home, analysis, chart tool, info pages
  *     /sitemap-currencies.xml  one hub per currency
- *     /sitemap-pairs-vnd.xml   the pairs based on VND — one file per hub
+ *     /sitemap-pairs.xml       every pair page
+ *
+ * Three sections, not one per hub. A sitemap index exists to get past the
+ * 50,000-URL / 50 MB limit on a single file, and this site has under a
+ * hundred URLs — splitting them across a file per currency was valid but
+ * meant thirty fetches to read ninety URLs, and thirty rows of two-to-six
+ * URLs each in Search Console's coverage report. Splitting by content type
+ * keeps the per-section diagnostics useful and costs four fetches.
+ *
+ * Worth being clear about what this does and does not do: a sitemap does not
+ * convey hierarchy to a search engine, however it is split. The nesting that
+ * Google reads comes from the BreadcrumbList on each page and from the links
+ * between them — the footer strip, the breadcrumbs, /analysis.
  */
 export type SitemapEntry = { path: string; lastmod: string };
 
@@ -50,14 +62,8 @@ export function indexablePairs(): [string, string][] {
   return allPairs().filter(([base, target]) => !pairIsNoindex(base, target)) as [string, string][];
 }
 
-/** Currencies that head at least one indexable pair. */
-function indexableBases(): string[] {
-  const bases = new Set(indexablePairs().map(([base]) => base));
-  return configCurrencies().filter((code) => bases.has(code));
-}
-
 export function sectionNames(): string[] {
-  return ["pages", "currencies", ...indexableBases().map((code) => `pairs-${code.toLowerCase()}`)];
+  return ["pages", "currencies", "pairs"];
 }
 
 /** The entries of one section, or null when the name names no section. */
@@ -77,13 +83,8 @@ export async function sectionEntries(section: string): Promise<SitemapEntry[] | 
     return configCurrencies().map((code) => ({ path: currencyUrl(code), lastmod }));
   }
 
-  const pairsOf = section.match(/^pairs-([a-z]{3})$/);
-  if (pairsOf) {
-    const base = pairsOf[1].toUpperCase();
-    if (!indexableBases().includes(base)) return null;
-    return indexablePairs()
-      .filter(([pairBase]) => pairBase === base)
-      .map(([pairBase, target]) => ({ path: pairUrl(pairBase, target), lastmod }));
+  if (section === "pairs") {
+    return indexablePairs().map(([base, target]) => ({ path: pairUrl(base, target), lastmod }));
   }
 
   return null;
