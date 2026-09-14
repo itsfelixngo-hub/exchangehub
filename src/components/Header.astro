@@ -30,7 +30,11 @@ const navLinks: { label: string; href: string }[] = [
   { label: "Rates", href: "/#today-rates" },
   { label: "Charts", href: "/chart" },
   { label: "Convert", href: "/#converter" },
-  { label: "Analysis", href: "/about" },
+  // Points at the analysis index. It used to point at /about, which promised
+  // market commentary and delivered the company page — and lit this tab up
+  // whenever someone was reading About. About lives in the footer with the
+  // other company pages.
+  { label: "Analysis", href: "/analysis" },
 ];
 ---
 

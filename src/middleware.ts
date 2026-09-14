@@ -50,7 +50,8 @@ const STATIC_ASSET = /\.(svg|png|ico|jpg|jpeg|webp|avif|woff2?)$/i;
 
 function staticCachePolicy(pathname: string): string | null {
   if (pathname.startsWith("/api/")) return "public, max-age=60, stale-while-revalidate=300";
-  if (pathname === "/sitemap.xml" || pathname === "/robots.txt") return "public, max-age=3600";
+  // The index and every section under it (/sitemap-pairs-vnd.xml and friends).
+  if (/^\/sitemap(-[a-z-]+)?\.xml$/.test(pathname) || pathname === "/robots.txt") return "public, max-age=3600";
   if (STATIC_ASSET.test(pathname)) return "public, max-age=31536000, immutable";
   return null;
 }

@@ -190,13 +190,28 @@ export async function buildHeroSecondary(base: string, exclude: string, limit = 
 // cover exactly that window — the stored history runs about a week, and
 // reporting a week's movement under a 24H badge would be plain wrong. Falls
 // back to the whole history only when the window holds too little to plot.
-export async function buildHeroChart(base: string, target: string): Promise<HeroChart | null> {
+export async function buildHeroChart(
+  base: string,
+  target: string,
+  // The home page draws one of these and wants every stored point. A page
+  // drawing twenty of them cares more about the bytes: a 24H window holds
+  // ~288 points, and at roughly 12 characters per "x,y" pair that is 3.5 KB of
+  // polyline per card. Downsampling to a few dozen is visually identical at
+  // thumbnail size. Unset means every point, as before.
+  maxPoints?: number,
+): Promise<HeroChart | null> {
   const history = (await pairHistory(base, target)).filter((e) => Number.isFinite(Number(e.rate)));
   if (!history.length) return null;
 
   const newestTs = history[history.length - 1].ts;
   const windowed = history.filter((e) => e.ts >= newestTs - HERO_WINDOW_HOURS * 3600);
-  const values = (windowed.length >= 2 ? windowed : history).map((e) => Number(e.rate));
+  const series = windowed.length >= 2 ? windowed : history;
+  // downsamplePoints keeps the first and last point of the window, so the
+  // change figure below is identical either way — only the line is coarser.
+  const sampled = maxPoints
+    ? downsamplePoints(series.map((e) => ({ ts: e.ts, value: Number(e.rate) })), maxPoints)
+    : null;
+  const values = sampled ? sampled.map((p) => p.value) : series.map((e) => Number(e.rate));
 
   const first = values[0];
   const latest = values[values.length - 1];

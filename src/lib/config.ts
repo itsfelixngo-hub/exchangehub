@@ -1,3 +1,4 @@
+import "./env";
 import ratePairsJson from "./data/rate_pairs.json";
 
 export const MAJOR_COLUMNS = ["USD", "EUR", "JPY", "GBP", "CNY", "VND"];
@@ -111,8 +112,90 @@ export function pairKey(base: string, target: string): string {
   return `${base.toLowerCase()}_${target.toLowerCase()}`;
 }
 
+// Every pair page is built from one template in lib/pair.ts: the numbers,
+// chart and statistics are genuinely per-pair, but the prose around them is
+// the same sentences with the currency names swapped. Ad networks and Google's
+// own spam policy call that scaled content, and 59 near-identical pages
+// submitted at once is what gets a site rejected.
+//
+// The 38 pairs reachable from the header menu are the hand-picked ones people
+// actually search for. The rest exist because the fetcher stores a file for
+// every currency against USD -- AED/USD, IDR/USD and friends -- and they are
+// pure long tail.
+//
+// Turning NOINDEX_LONGTAIL_PAIRS on marks that long tail `noindex` and drops
+// it from the sitemap, leaving 38 curated pages for review. It is OFF by
+// default: removing pages from an index is not something that should happen as
+// a side effect of a deploy. Turn it off again once those pages carry writing
+// of their own.
+/**
+ * Every pair page the site serves, deduplicated: the stored pairs plus the
+ * hand-picked menu ones, which include derived pairs with no stored file.
+ * Shared by the sitemap (which then drops the noindexed ones) and the analysis
+ * index (which does not — a page kept out of search still works for a reader).
+ */
+let allPairsCache: [string, string][] | null = null;
+
+export function allPairs(): readonly [string, string][] {
+  if (allPairsCache) return allPairsCache;
+  const seen = new Set<string>();
+  const out: [string, string][] = [];
+  for (const [base, target] of [
+    ...RATE_PAIRS,
+    ...Object.entries(MENU_GROUPS).flatMap(([base, targets]) =>
+      targets.filter((target) => target !== base).map((target) => [base, target] as [string, string])),
+  ]) {
+    const key = pairKey(base, target);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push([base, target]);
+  }
+  allPairsCache = out;
+  return out;
+}
+
+/** Currencies that head at least one pair page, in configCurrencies() order. */
+export function currenciesWithPairs(): string[] {
+  const bases = new Set(allPairs().map(([base]) => base));
+  return configCurrencies().filter((code) => bases.has(code));
+}
+
+export function pairsForBase(base: string): [string, string][] {
+  const code = base.toUpperCase();
+  return allPairs().filter(([pairBase]) => pairBase === code) as [string, string][];
+}
+
+let featuredPairsCache: Set<string> | null = null;
+
+export function featuredPairKeys(): Set<string> {
+  if (!featuredPairsCache) {
+    featuredPairsCache = new Set(
+      Object.entries(MENU_GROUPS).flatMap(([base, targets]) =>
+        targets.filter((target) => target !== base).map((target) => pairKey(base, target))),
+    );
+  }
+  return featuredPairsCache;
+}
+
+const NOINDEX_LONGTAIL = ["1", "true", "yes", "on"]
+  .includes((process.env.NOINDEX_LONGTAIL_PAIRS ?? "").trim().toLowerCase());
+
+/** True when this pair page should ask search engines not to index it. */
+export function pairIsNoindex(base: string, target: string): boolean {
+  return NOINDEX_LONGTAIL && !featuredPairKeys().has(pairKey(base, target));
+}
+
 export function pairUrl(base: string, target: string): string {
   return `/${base.toLowerCase()}-${target.toLowerCase()}`;
+}
+
+/** `/vnd` — the hub every `/vnd-*` and `/*-vnd` pair page hangs under. */
+export function currencyUrl(code: string): string {
+  return `/${code.toLowerCase()}`;
+}
+
+export function isCurrencyCode(code: string): boolean {
+  return configCurrencies().includes(code.toUpperCase());
 }
 
 export function parsePairKey(pair: string): [string, string] {

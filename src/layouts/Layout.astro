@@ -1,5 +1,5 @@
 ---
-import { siteOrigin } from "../lib/site";
+import { siteOrigin, SITE_NAME, SITE_ALTERNATE_NAME } from "../lib/site";
 import { resolveVisitorLocale } from "../lib/geo";
 import "../styles/responsive.css";
 
@@ -8,11 +8,18 @@ interface Props {
   description: string;
   path: string;
   breadcrumbName?: string;
+  /** One level between the home page and this one, e.g. VND above VND/USD. */
+  breadcrumbParent?: { name: string; path: string };
   extraSchemaNodes?: unknown[];
   ogImage?: string;
+  /** Ask search engines to leave this page out — see pairIsNoindex(). */
+  noindex?: boolean;
 }
 
-const { title, description, path, breadcrumbName, extraSchemaNodes = [], ogImage } = Astro.props;
+const {
+  title, description, path, breadcrumbName, breadcrumbParent,
+  extraSchemaNodes = [], ogImage, noindex = false,
+} = Astro.props;
 
 // The CJK faces are only ever applied to Google-translated text — see the
 // html[lang^="zh"] / [lang^="ja"] rules in Header.astro — but asking for them
@@ -28,6 +35,10 @@ const siteBaseUrl = siteOrigin(Astro.request, Astro.url);
 const canonicalUrl = siteBaseUrl + path;
 const logoUrl = `${siteBaseUrl}/ratehub-2c.png`;
 const ogImageUrl = ogImage ?? `${siteBaseUrl}/og-image.png`;
+// Only the built-in card has known dimensions. Facebook renders a small card
+// on first share when it has to fetch the image to measure it, so they are
+// worth stating -- but stating them for a caller's own image would be a guess.
+const isDefaultOgImage = ogImage === undefined;
 
 const schema = {
   "@context": "https://schema.org",
@@ -35,14 +46,20 @@ const schema = {
     {
       "@type": "Organization",
       "@id": `${siteBaseUrl}/#organization`,
-      name: "ExchangeHub",
+      name: SITE_NAME,
+      alternateName: SITE_ALTERNATE_NAME,
       url: siteBaseUrl,
       logo: { "@type": "ImageObject", url: logoUrl },
     },
     {
+      // Google picks the name it shows under the search result from here. The
+      // brand in the page copy is "ExchangeHub" while the domain reads
+      // "ratehubfx.com"; without alternateName the two look like unrelated
+      // signals and Google substitutes a name of its own choosing.
       "@type": "WebSite",
       "@id": `${siteBaseUrl}/#website`,
-      name: "ExchangeHub",
+      name: SITE_NAME,
+      alternateName: SITE_ALTERNATE_NAME,
       url: siteBaseUrl,
       publisher: { "@id": `${siteBaseUrl}/#organization` },
       inLanguage: "en",
@@ -59,11 +76,22 @@ const schema = {
       inLanguage: "en",
     },
     {
+      // Three levels where a parent is given — home, the currency hub, the
+      // pair — so the trail Google prints under the result mirrors the way the
+      // pages actually nest rather than flattening every page onto the root.
       "@type": "BreadcrumbList",
       "@id": `${canonicalUrl}#breadcrumb`,
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Exchange Rates", item: siteBaseUrl },
-        { "@type": "ListItem", position: 2, name: breadcrumbName ?? title },
+        ...(breadcrumbParent
+          ? [{
+              "@type": "ListItem",
+              position: 2,
+              name: breadcrumbParent.name,
+              item: siteBaseUrl + breadcrumbParent.path,
+            }]
+          : []),
+        { "@type": "ListItem", position: breadcrumbParent ? 3 : 2, name: breadcrumbName ?? title },
       ],
     },
     ...extraSchemaNodes,
@@ -78,7 +106,12 @@ const schema = {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
+    <meta
+      name="robots"
+      content={noindex
+        ? "noindex,follow"
+        : "index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1"}
+    />
     <link rel="canonical" href={canonicalUrl} />
     <!-- Generated from the site logo (public/ratehub-2b-icon.png), cropped to
          the "fx" mark — the bars beside it turn to mush at 16px. -->
@@ -87,14 +120,32 @@ const schema = {
     <link rel="icon" type="image/png" href="/favicon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="ExchangeHub" />
+    <meta property="og:site_name" content={SITE_NAME} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:alt" content={title} />
+    {isDefaultOgImage && (
+      <>
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+      </>
+    )}
+    <!-- The page is served in English and translated in the browser by Google's
+         widget, which rewrites html[lang] itself. There is no separate URL per
+         language, so there is nothing for og:locale:alternate or hreflang to
+         point at — claiming otherwise would send crawlers to pages that do not
+         exist. -->
+    <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    <!-- X falls back to og:image, but other scrapers reading the card tags
+         (Slack, Discord, LinkedIn) do not all do that. -->
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={title} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

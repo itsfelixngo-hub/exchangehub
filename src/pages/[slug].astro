@@ -1,0 +1,35 @@
+---
+export const prerender = false;
+
+import CurrencyPage from "../components/CurrencyPage.astro";
+import PairPage from "../components/PairPage.astro";
+import { configCurrencies } from "../lib/config";
+
+// One dynamic route for both shapes, because `/vnd` and `/vnd-usd` occupy the
+// same segment: two dynamic routes here would be ambiguous, and Astro would
+// pick one of them for both URLs. So the branch happens in code instead.
+//
+//   /vnd       -> the currency hub
+//   /vnd-usd   -> the pair page
+//   anything else -> 404, rather than a page about rates we do not hold
+//
+// Casing, underscores, trailing slashes and the old /exchange/ prefix are
+// already normalised into this shape by src/middleware.ts, so what arrives
+// here is lower case and canonical.
+const slug = (Astro.params.slug ?? "").toLowerCase();
+const currencies = configCurrencies();
+
+const parts = slug.split("-");
+const base = (parts[0] ?? "").toUpperCase();
+const target = (parts[1] ?? "").toUpperCase();
+
+const isPair = parts.length === 2 && base !== target
+  && currencies.includes(base) && currencies.includes(target);
+const isCurrency = parts.length === 1 && currencies.includes(base);
+
+if (!isPair && !isCurrency) {
+  return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+---
+
+{isCurrency ? <CurrencyPage code={base} /> : <PairPage base={base} target={target} />}

@@ -4,6 +4,14 @@ import "./env";
 // two front ends say the same thing while both are live.
 export const CONTACT_EMAIL = process.env.SITE_CONTACT_EMAIL ?? "contact@ratehubfx.com";
 
+/**
+ * The day the copy below last changed, as `sitemap.xml` reports it for the
+ * info pages. Bump it when you edit INFO_PAGES — a wrong date here is better
+ * than the old behaviour, which stamped today onto every URL on every crawl
+ * and taught Google to ignore this site's lastmod entirely.
+ */
+export const INFO_CONTENT_LAST_MODIFIED = "2026-09-13";
+
 export type InfoSection = { heading: string; body: string[] };
 
 export type InfoPage = {
@@ -80,10 +88,19 @@ export const INFO_PAGES = {
         ],
       },
       {
-        heading: "Cookies and advertising",
+        heading: "Cookies this site sets",
         body: [
-          "Advertising partners, including Google if enabled, may use cookies to serve ads based on a user's prior visits to this or other websites.",
-          "Users can manage cookie preferences in their browser settings. If Google ads are used, users can also review Google's advertising controls and privacy settings.",
+          "ExchangeHub sets a small number of first-party cookies for the site to work: a language preference cookie recording the language chosen in the header, the cookie Google's translation widget uses to remember that choice, and a short-lived cookie issued to the contact form to reject automated submissions.",
+          "These cookies carry no advertising identifier and are not shared with advertising partners.",
+        ],
+      },
+      {
+        heading: "Third-party advertising and Google",
+        body: [
+          "Third-party vendors, including Google, use cookies to serve ads based on a user's prior visits to this website or other websites.",
+          "Google's use of advertising cookies enables it and its partners to serve ads to users based on their visit to this site and/or other sites on the Internet.",
+          "Users may opt out of personalised advertising by visiting Google's Ads Settings at https://www.google.com/settings/ads. Further detail is published at https://policies.google.com/technologies/ads.",
+          "Where third-party vendors other than Google are used, users may opt out of personalised advertising through http://www.aboutads.info/choices/.",
         ],
       },
       {
@@ -94,8 +111,40 @@ export const INFO_PAGES = {
         ],
       },
       {
-        heading: "Contact",
-        body: [`For privacy requests, contact ${CONTACT_EMAIL}.`],
+        heading: "How long data is kept",
+        body: [
+          "Server logs are retained only as long as needed to investigate performance and abuse, and are then deleted or aggregated so that individual visits can no longer be identified.",
+          "Messages sent through the contact form are kept while the request is handled and for a reasonable period afterwards for reference, then deleted on request.",
+          "Retention of any advertising or analytics data is governed by the provider that collects it, under its own policy.",
+        ],
+      },
+      {
+        heading: "Visitors in the European Economic Area and the United Kingdom",
+        body: [
+          "Where consent is required for advertising or analytics cookies, it is requested before those cookies are set, and a visitor may change or withdraw that choice at any time.",
+          "Visitors in these regions have the right to request access to their personal data, ask for its correction or erasure, object to or restrict processing, and lodge a complaint with their national data protection authority.",
+          `Requests of this kind can be sent to ${CONTACT_EMAIL} and are answered within the period required by applicable law.`,
+        ],
+      },
+      {
+        heading: "Visitors in California",
+        body: [
+          "ExchangeHub does not sell personal information for money. Sharing data with advertising partners for personalised advertising may nonetheless count as a sale or share under California law.",
+          `To opt out of that sharing, use the advertising controls linked above or send a Do Not Sell or Share My Personal Information request to ${CONTACT_EMAIL}. No visitor is treated differently for exercising this right.`,
+        ],
+      },
+      {
+        heading: "Children",
+        body: [
+          "This site is a general-audience currency reference and is not directed at children under 13. ExchangeHub does not knowingly collect personal information from children under 13; if such information is found to have been collected, it is deleted.",
+        ],
+      },
+      {
+        heading: "Changes and contact",
+        body: [
+          "This policy is updated when the site's data practices change, and the date of the most recent revision is shown on this page.",
+          `For privacy requests or questions about this policy, contact ${CONTACT_EMAIL}.`,
+        ],
       },
     ],
   },

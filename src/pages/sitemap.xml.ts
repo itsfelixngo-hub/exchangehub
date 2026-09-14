@@ -1,33 +1,21 @@
 import type { APIRoute } from "astro";
-import { MENU_GROUPS, RATE_PAIRS, pairUrl } from "../lib/config";
-import { INFO_LINKS } from "../lib/info";
 import { siteOrigin } from "../lib/site";
+import { XML_HEADERS, dataLastmod, renderIndex, sectionNames } from "../lib/sitemap";
 
 export const prerender = false;
 
-function escapeXml(value: string): string {
-  return value.replace(/[<>&'"]/g, (char) =>
-    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[char] as string));
-}
-
-// Same set the Flask sitemap listed: the home page, the chart tool, the policy
-// pages, every configured pair, and the hand-picked menu pairs (which include
-// derived pairs that have no stored file of their own).
-export const GET: APIRoute = ({ request, url }) => {
+// The index. robots.txt points here, and Search Console follows it down to the
+// sections — which is where the hierarchy lives, since the URLs themselves are
+// deliberately flat. See src/lib/sitemap.ts.
+//
+// A section's lastmod is the newest date inside it. Every section holds at
+// least one page built from rate data (the "pages" section has the home page),
+// so that is the data date in all of them.
+export const GET: APIRoute = async ({ request, url }) => {
   const origin = siteOrigin(request, url);
-  const paths = [
-    "/",
-    "/chart",
-    ...INFO_LINKS.map((link) => link.href),
-    ...RATE_PAIRS.map(([base, target]) => pairUrl(base, target)),
-    ...Object.entries(MENU_GROUPS).flatMap(([base, targets]) =>
-      targets.filter((target) => target !== base).map((target) => pairUrl(base, target))),
-  ];
-  const seen = [...new Set(paths)];
-  const lastmod = new Date().toISOString().slice(0, 10);
-  const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
-    + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
-    + seen.map((path) => `  <url><loc>${escapeXml(origin + path)}</loc><lastmod>${lastmod}</lastmod></url>`).join("\n")
-    + `\n</urlset>\n`;
-  return new Response(body, { headers: { "content-type": "application/xml; charset=utf-8" } });
+  const lastmod = await dataLastmod();
+  return new Response(
+    renderIndex(origin, sectionNames().map((name) => ({ name, lastmod }))),
+    { headers: XML_HEADERS },
+  );
 };

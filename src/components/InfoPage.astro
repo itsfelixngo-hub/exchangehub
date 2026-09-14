@@ -6,7 +6,7 @@ import BackToTop from "./BackToTop.astro";
 import { buildMenuModel } from "../lib/menu";
 import { buildPairMovers } from "../lib/home";
 import { resolveVisitorLocale } from "../lib/geo";
-import { CONTACT_EMAIL, INFO_PAGES, type InfoSlug } from "../lib/info";
+import { CONTACT_EMAIL, INFO_CONTENT_LAST_MODIFIED, INFO_PAGES, type InfoSlug } from "../lib/info";
 
 interface Props {
   slug: InfoSlug;
@@ -14,6 +14,12 @@ interface Props {
 
 const { slug } = Astro.props;
 const page = INFO_PAGES[slug];
+// A dated policy is what an ad network's reviewer looks for, and the privacy
+// copy promises the date is here. Same constant the sitemap reports, so the
+// page and the sitemap can never disagree about it.
+const lastUpdated = new Date(`${INFO_CONTENT_LAST_MODIFIED}T00:00:00Z`).toLocaleDateString("en-GB", {
+  day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+});
 const menu = buildMenuModel();
 const pairMovers = await buildPairMovers();
 const locale = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_lang")?.value);
@@ -34,14 +40,17 @@ function splitAroundEmail(text: string): [string, string] | null {
   breadcrumbName={page.heading}
 >
   <div>
-    <Header pairMovers={pairMovers} active={slug === "about" ? "Analysis" : "none"} autoLang={locale.lang} />
+    <Header pairMovers={pairMovers} active="none" autoLang={locale.lang} />
 
     <div class="page-pad section-pad" style="background:#0c0b0d; padding:56px 40px 80px; font-family:'Manrope', Arial, sans-serif;">
       <div style="max-width:760px; margin:0 auto;">
         <span style="display:inline-block; background:rgba(225,29,63,0.14); border:1px solid rgba(225,29,63,0.4); color:#ff4d6d; font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:6px 12px; border-radius:999px; margin-bottom:18px;">
           {page.eyebrow}
         </span>
-        <h1 class="lead-title" style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; color:#f5f2f1; margin:0 0 32px; line-height:1.15;">{page.heading}</h1>
+        <h1 class="lead-title" style="font-family:'Space Grotesk', Arial, sans-serif; font-size:36px; color:#f5f2f1; margin:0 0 10px; line-height:1.15;">{page.heading}</h1>
+        <p style="font-size:13px; color:#6f6869; margin:0 0 32px;">
+          Last updated <time datetime={INFO_CONTENT_LAST_MODIFIED}>{lastUpdated}</time>
+        </p>
 
         {page.sections.map((section, index) => (
           <div style={`margin-bottom:${index === page.sections.length - 1 ? "8px" : "32px"};`}>

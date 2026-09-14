@@ -1,13 +1,14 @@
 ---
-export const prerender = false;
-
+// The pair page itself. It used to be src/pages/[pair].astro; it moved here so
+// that one dynamic route (src/pages/[slug].astro) can serve both this and the
+// currency hub without two same-shape dynamic routes fighting over `/vnd`.
 import Layout from "../layouts/Layout.astro";
-import Header from "../components/Header.astro";
-import Footer from "../components/Footer.astro";
-import BackToTop from "../components/BackToTop.astro";
+import Header from "./Header.astro";
+import Footer from "./Footer.astro";
+import BackToTop from "./BackToTop.astro";
 import { buildMenuModel } from "../lib/menu";
 import { buildPairMovers } from "../lib/home";
-import { CURRENCY_PROFILES, configCurrencies, currencyProfile, pairUrl } from "../lib/config";
+import { CURRENCY_PROFILES, configCurrencies, currencyProfile, currencyUrl, pairIsNoindex, pairUrl } from "../lib/config";
 import { formatRate } from "../lib/format";
 import { flagSrc, SWAP_ICON, CHEVRON_DOWN } from "../lib/flags";
 import { resolveVisitorLocale } from "../lib/geo";
@@ -16,18 +17,15 @@ import {
   buildPairContent, buildPairModel, chartSeries, conversionRows, rangeOptions,
 } from "../lib/pair";
 
-// `/eur-usd` — anything that isn't two configured currency codes is a 404
-// rather than a page about a pair we hold no rates for.
-const slug = (Astro.params.pair ?? "").toLowerCase();
-const parts = slug.split("-");
-const currencies = configCurrencies();
-const base = (parts[0] ?? "").toUpperCase();
-const target = (parts[1] ?? "").toUpperCase();
-const valid = parts.length === 2 && base !== target && currencies.includes(base) && currencies.includes(target);
-
-if (!valid) {
-  return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+interface Props {
+  base: string;
+  target: string;
 }
+
+// Validated by the route before it gets here: both codes are configured and
+// they differ. See src/pages/[slug].astro.
+const { base, target } = Astro.props;
+const currencies = configCurrencies();
 
 const model = await buildPairModel(base, target);
 const content = buildPairContent(model);
@@ -100,13 +98,26 @@ const TOOL_TABS = [
   description={description}
   path={pairUrl(base, target)}
   breadcrumbName={`${base} to ${target}`}
+  breadcrumbParent={{ name: `${base} rates`, path: currencyUrl(base) }}
   extraSchemaNodes={extraSchemaNodes}
+  noindex={pairIsNoindex(base, target)}
 >
   <div>
     <Header pairMovers={pairMovers} active="Charts" autoLang={locale.lang} />
 
     <div class="page-pad section-pad" style="background:radial-gradient(1100px 560px at 82% -10%, rgba(225,29,63,0.22), transparent 60%), #0c0b0d; padding:40px 40px 80px; font-family:'Manrope', Arial, sans-serif;">
       <div style="max-width:1160px; margin:0 auto;">
+
+        <!-- The same trail the BreadcrumbList in the head declares. Google
+             cross-checks the two, and a reader gets a way up to every other
+             pair for this currency. -->
+        <nav aria-label="Breadcrumb" style="font-size:13px; color:#8b857f; margin-bottom:18px;">
+          <a href="/" style="color:#8b857f;">Exchange Rates</a>
+          <span style="margin:0 8px;">/</span>
+          <a href={currencyUrl(base)} style="color:#8b857f;">{base}</a>
+          <span style="margin:0 8px;">/</span>
+          <span style="color:#f5f2f1;">{base}/{target}</span>
+        </nav>
 
         <div id="chart-card" class="pair-chart-card" style="background:#fff; border-radius:20px; padding:28px 32px 20px; box-shadow:0 24px 60px rgba(0,0,0,0.35);">
 

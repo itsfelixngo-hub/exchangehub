@@ -15,6 +15,11 @@ import "./env";
 // Node server is bound to localhost where nothing else can reach it.
 const CONFIGURED = (process.env.SITE_URL ?? process.env.PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
 
+/** The brand as the page copy writes it — header, footer, every info page. */
+export const SITE_NAME = "ExchangeHub";
+/** The domain reads as a second brand, so it is declared as the same one. */
+export const SITE_ALTERNATE_NAME = "RateHubFX";
+
 export function siteOrigin(request: Request, url: URL): string {
   if (CONFIGURED) return CONFIGURED;
   const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();

@@ -89,6 +89,7 @@ try {
   for (const [route, expected] of [
     ["/", 200],
     ["/chart", 200],
+    ["/analysis", 200],
     ["/contact", 200],
     ["/about", 200],
     ["/terms", 200],
@@ -100,6 +101,11 @@ try {
     ["/eur-usd", 200],
     ["/usd-vnd", 200],
     ["/vnd-eur", 200],
+    // The currency hub a pair page hangs under. Same segment as a pair, told
+    // apart by shape, so both have to keep answering.
+    ["/vnd", 200],
+    ["/usd", 200],
+    ["/zz", 404],
     ["/api/rates?quote=EUR", 200],
     ["/api/hero?base=USD&target=VND", 200],
     // Not two known currency codes, or both the same: a 404, not a page
@@ -126,9 +132,32 @@ try {
   const html = await home.text();
   check("canonical is absolute https", html.includes(`<link rel="canonical" href="${SITE}/">`));
   check("og:url matches canonical", html.includes(`content="${SITE}/"`));
+  // /sitemap.xml is an index; the pages themselves live in the sections it
+  // names. The hierarchy is the point, so both levels are asserted.
   const sitemap = await (await fetch(`${BASE}/sitemap.xml`)).text();
-  check("sitemap uses the site origin", sitemap.includes(`<loc>${SITE}/</loc>`));
-  check("sitemap lists pair pages", sitemap.includes(`<loc>${SITE}/usd-vnd</loc>`));
+  check("sitemap.xml is an index", sitemap.includes("<sitemapindex"));
+  check("index names the pages section", sitemap.includes(`<loc>${SITE}/sitemap-pages.xml</loc>`));
+  check("index names the currencies section", sitemap.includes(`<loc>${SITE}/sitemap-currencies.xml</loc>`));
+  check("index names a per-currency pair section", sitemap.includes(`<loc>${SITE}/sitemap-pairs-usd.xml</loc>`));
+
+  const pagesSection = await (await fetch(`${BASE}/sitemap-pages.xml`)).text();
+  check("pages section uses the site origin", pagesSection.includes(`<loc>${SITE}/</loc>`));
+
+  const currenciesSection = await (await fetch(`${BASE}/sitemap-currencies.xml`)).text();
+  check("currencies section lists the hubs", currenciesSection.includes(`<loc>${SITE}/vnd</loc>`));
+  check("pages section lists the analysis index", pagesSection.includes(`<loc>${SITE}/analysis</loc>`));
+
+  // The analysis index is the header's Analysis tab and a second way into the
+  // hubs, so it has to keep linking to them.
+  const analysis = await (await fetch(`${BASE}/analysis`)).text();
+  check("analysis links to the currency hubs", analysis.includes('href="/vnd"') && analysis.includes('href="/usd"'));
+
+  const usdPairs = await (await fetch(`${BASE}/sitemap-pairs-usd.xml`)).text();
+  check("pair section lists pair pages", usdPairs.includes(`<loc>${SITE}/usd-vnd</loc>`));
+  check("pair section holds only its own base", !usdPairs.includes(`<loc>${SITE}/eur-gbp</loc>`));
+
+  const missingSection = await fetch(`${BASE}/sitemap-nope.xml`);
+  check("unknown sitemap section 404s", missingSection.status === 404, `got ${missingSection.status}`);
   const robots = await (await fetch(`${BASE}/robots.txt`)).text();
   check("robots points at the sitemap", robots.includes(`Sitemap: ${SITE}/sitemap.xml`));
 

@@ -2,6 +2,7 @@
 import type { MenuModel } from "../lib/menu";
 import { SWAP_ICON } from "../lib/flags";
 import { INFO_LINKS } from "../lib/info";
+import { configCurrencies, currencyUrl } from "../lib/config";
 
 interface Props {
   menu: MenuModel;
@@ -83,6 +84,24 @@ const bottomLinks = secondary === "company" ? [] : INFO_LINKS;
             </a>
           ))}
         </div>
+      </div>
+    </div>
+    <!-- The currency hubs, on every page. The breadcrumb on a pair page also
+         points up to one of these, but only to its own; this is what puts all
+         of them one click from anywhere, so the hub level is something a
+         crawler meets by following links rather than only in the sitemap. -->
+    <div style="border-top:1px solid #2a2426; margin-top:32px; padding-top:16px;">
+      <h2 style="margin:0 0 12px; font-size:13px; color:#f5f2f1; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Rates by currency</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        {configCurrencies().map((code) => (
+          <a
+            translate="no"
+            href={currencyUrl(code)}
+            style="display:inline-block; border:1px solid #2a2426; border-radius:8px; background:#151315; color:#a79fa0; font-size:12.5px; font-weight:600; padding:6px 11px; font-family:'IBM Plex Mono', monospace;"
+          >
+            {code}
+          </a>
+        ))}
       </div>
     </div>
     {bottomLinks.length > 0 && (
