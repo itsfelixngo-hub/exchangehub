@@ -94,7 +94,11 @@ const navLinks: { label: string; href: string }[] = [
           aria-controls="nav-drawer"
           style="display:none; width:44px; height:44px; margin-right:-10px; border-radius:999px; background:transparent; border:none; align-items:center; justify-content:center; cursor:pointer;"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          {/* Both icons ship; `aria-expanded` picks which one shows, so the
+              open drawer offers a way to close itself rather than leaving the
+              same hamburger sitting over it. */}
+          <svg class="hdr-menu-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          <svg class="hdr-menu-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </div>
     </div>

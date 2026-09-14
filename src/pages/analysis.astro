@@ -12,6 +12,7 @@ import Layout from "../layouts/Layout.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import BackToTop from "../components/BackToTop.astro";
+import SortFilterBar from "../components/SortFilterBar.astro";
 import { buildMenuModel } from "../lib/menu";
 import { buildHeroChart, buildHeroSecondary, buildPairMovers } from "../lib/home";
 import { MAJOR_COLUMNS, configCurrencies, currencyProfile, currencyUrl } from "../lib/config";
@@ -72,6 +73,17 @@ const extraSchemaNodes = [
   },
 ];
 
+// No rate sort here: each card quotes its currency against USD (USD against
+// EUR), so the numbers sit on different scales and ordering them would compare
+// nothing. `order` is the majors-first order the cards are built in.
+const ANALYSIS_SORT_OPTIONS = [
+  { value: "order-asc", label: "Default" },
+  { value: "code-asc", label: "Currency A-Z" },
+  { value: "code-desc", label: "Currency Z-A" },
+  { value: "change-desc", label: "24H change: high to low" },
+  { value: "change-asc", label: "24H change: low to high" },
+];
+
 const upColor = "#34d399";
 const downColor = "#ff4d6d";
 const flatColor = "#a79fa0";
@@ -108,6 +120,10 @@ const lineColor = (direction?: "up" | "down" | "flat") =>
           on how to read it.
         </p>
 
+        <div style="margin-bottom:22px;">
+          <SortFilterBar id="analysis-sf" options={ANALYSIS_SORT_OPTIONS} placeholder="Filter currencies..." />
+        </div>
+
         <div id="analysis-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:18px;">
           {cards.map(({ code, reference, chart, profile, secondary }, index) => {
             const flag = flagSrc(code);
@@ -117,6 +133,9 @@ const lineColor = (direction?: "up" | "down" | "flat") =>
               <div
                 class="analysis-card"
                 data-extra={index >= EAGER_CARDS ? "true" : "false"}
+                data-sf-search={`${code} ${profile.name}`.toLowerCase()}
+                data-sf-code={code}
+                data-sf-change={chart ? chart.changePct : ""}
                 hidden={index >= EAGER_CARDS}
                 style="background:rgba(255,255,255,0.04); border:1px solid #2a2426; border-radius:20px; padding:24px;"
               >
@@ -170,7 +189,7 @@ const lineColor = (direction?: "up" | "down" | "flat") =>
                 )}
 
                 {secondary.length > 0 && (
-                  <div style={`display:grid; grid-template-columns:repeat(${secondary.length},1fr); gap:10px; margin-top:20px;`}>
+                  <div class="rate-card-row" style={`display:grid; grid-template-columns:repeat(${secondary.length},minmax(0,1fr)); gap:10px; margin-top:20px;`}>
                     {secondary.map((item) => (
                       <a href={item.href} class="rate-card">
                         <div translate="no" class="rate-card-label">{item.label}</div>
@@ -187,6 +206,10 @@ const lineColor = (direction?: "up" | "down" | "flat") =>
             );
           })}
         </div>
+
+        <p id="analysis-empty" hidden style="font-size:15px; color:#a79fa0; margin:18px 0 0;">
+          No currencies match your filter.
+        </p>
 
         {cards.length > EAGER_CARDS && (
           <div style="text-align:center; margin-top:28px;">
@@ -209,16 +232,37 @@ const lineColor = (direction?: "up" | "down" | "flat") =>
 </Layout>
 
 <script>
-  // Every card is in the HTML — this only defers paint and layout for the ones
-  // below the majors, so a crawler still reads all of them and no second
+  import { wireSortFilter } from "../scripts/sort-filter";
+
+  // Every card is in the HTML — the button only defers paint and layout for the
+  // ones below the majors, so a crawler still reads all of them and no second
   // request is needed. Without JS the button never appears and the extra cards
   // stay hidden, so the fallback is a shorter page rather than a broken one.
   const button = document.getElementById("analysis-show-more");
   const extras = Array.from(document.querySelectorAll<HTMLElement>('.analysis-card[data-extra="true"]'));
-  if (button && extras.length) {
-    button.addEventListener("click", () => {
-      for (const card of extras) card.hidden = false;
-      button.remove();
+  const revealExtras = () => {
+    for (const card of extras) card.hidden = false;
+    button?.remove();
+  };
+  button?.addEventListener("click", revealExtras);
+
+  const grid = document.getElementById("analysis-grid");
+  const empty = document.getElementById("analysis-empty");
+  if (grid) {
+    wireSortFilter({
+      bar: document.getElementById("analysis-sf"),
+      container: grid,
+      itemSelector: ".analysis-card",
+      countNoun: "currencies",
+      // Sorting or filtering half a list is misleading — the biggest mover may
+      // well be one of the cards still folded away — so the first use of the
+      // bar opens the full set and retires the button.
+      onInput: revealExtras,
+      onApply: (matched, all) => {
+        for (const card of all) card.hidden = true;
+        for (const card of matched) card.hidden = false;
+        if (empty) empty.hidden = matched.length > 0;
+      },
     });
   }
 </script>

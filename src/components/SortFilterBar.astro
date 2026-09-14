@@ -1,0 +1,95 @@
+---
+/* The search box and sort dropdown over a currency list. The behaviour lives
+ * in scripts/sort-filter.ts; this is only the markup, so the three lists that
+ * carry one look and read the same.
+ *
+ * Every option is `field-direction`, which is what the script splits on:
+ * `order` is the order the server sent, `code`, `rate` and `change` read the
+ * matching `data-sf-*` attribute off each item.
+ *
+ * The dropdown is a listbox rather than a `<select>`: a native one draws its
+ * arrow and its popup from the operating system, so on these dark surfaces it
+ * arrived as a white list in another font with an arrow that sat off-centre in
+ * the pill. This one is styled with the rest of the site — and the panel is
+ * the same dark card the currency pickers use.
+ *
+ * The two halves can be rendered apart — the home board drops the sort into
+ * the board's own base-currency bar. They still drive one list: wireSortFilter
+ * is handed an ancestor holding both rather than this element.
+ */
+import { CHEVRON_DOWN } from "../lib/flags";
+
+interface Props {
+  /** Prefixes the element ids so two bars can share a page. */
+  id: string;
+  parts?: "both" | "search" | "sort";
+  options?: { value: string; label: string }[];
+  placeholder?: string;
+  /** Names the dropdown for a screen reader. It carries no visible caption:
+   *  the option labels ("Change: high to low") already say what it does. */
+  label?: string;
+  /** Pill styling, for the dropdown that sits in the rate board's own bar. */
+  compact?: boolean;
+}
+
+const {
+  id, parts = "both", options = [],
+  placeholder = "Search currencies...", label = "Sort", compact = false,
+} = Astro.props;
+
+const showSearch = parts !== "sort";
+const showSort = parts !== "search";
+const selected = options[0];
+---
+
+<div class:list={["sf-bar", compact && "sf-bar-compact"]} id={id}>
+  {showSearch && (
+    <div class="sf-search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a79fa0" stroke-width="2" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+      </svg>
+      <input
+        type="search"
+        id={`${id}-search`}
+        data-sf-search
+        placeholder={placeholder}
+        autocomplete="off"
+        aria-label={placeholder.replace(/\.+$/, "")}
+      />
+    </div>
+  )}
+  {showSort && selected && (
+    <div class="sf-menu" data-sf-sort data-value={selected.value}>
+      <button
+        type="button"
+        class="sf-menu-btn"
+        id={`${id}-sort`}
+        aria-haspopup="listbox"
+        aria-expanded="false"
+        aria-label={`${label} currencies`}
+      >
+        <span data-sf-menu-label>{selected.label}</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true" set:html={CHEVRON_DOWN} />
+      </button>
+      <div class="sf-menu-panel picker-scroll" role="listbox" aria-label={`${label} currencies`} hidden>
+        {options.map((option) => (
+          <button
+            type="button"
+            class="sf-menu-option"
+            role="option"
+            data-value={option.value}
+            aria-selected={option.value === selected.value ? "true" : "false"}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )}
+  {showSearch && <span class="sf-count" data-sf-count aria-live="polite"></span>}
+</div>
+
+<script>
+  import { wireSortMenus } from "../scripts/sort-menu";
+  wireSortMenus();
+</script>

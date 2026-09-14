@@ -10,6 +10,7 @@ import Layout from "../layouts/Layout.astro";
 import Header from "./Header.astro";
 import Footer from "./Footer.astro";
 import BackToTop from "./BackToTop.astro";
+import SortFilterBar from "./SortFilterBar.astro";
 import { buildMenuModel } from "../lib/menu";
 import { buildPairMovers, buildQuoteRateRows } from "../lib/home";
 import { configCurrencies, currencyProfile, currencyUrl, pairUrl } from "../lib/config";
@@ -42,6 +43,18 @@ const description = `Live ${code} exchange rates: the ${profile.name} against ${
 
 const siteBaseUrl = siteOrigin(Astro.request, Astro.url);
 const canonical = siteBaseUrl + currencyUrl(code);
+
+// `order` is the order the rows arrive in — configCurrencies() order, majors
+// first. The rest sort on the data attributes each row carries.
+const PAIR_SORT_OPTIONS = [
+  { value: "order-asc", label: "Default" },
+  { value: "code-asc", label: "Currency A-Z" },
+  { value: "code-desc", label: "Currency Z-A" },
+  { value: "change-desc", label: "Change: high to low" },
+  { value: "change-asc", label: "Change: low to high" },
+  { value: "rate-desc", label: "Rate: high to low" },
+  { value: "rate-asc", label: "Rate: low to high" },
+];
 
 // An ItemList of the pair pages below: it states the hub-to-pair relationship
 // in the markup rather than leaving it to be inferred from the links.
@@ -97,6 +110,12 @@ const extraSchemaNodes = [
         </h2>
         <div style="width:26px; height:2px; background:#e11d3f; margin-bottom:18px;"></div>
 
+        {rows.length > 0 && (
+          <div style="margin-bottom:16px;">
+            <SortFilterBar id="pairs-sf" options={PAIR_SORT_OPTIONS} placeholder="Filter currencies..." />
+          </div>
+        )}
+
         <div style="background:#fff; border-radius:18px; padding:8px 4px; box-shadow:0 24px 60px rgba(0,0,0,0.35); overflow-x:auto;">
           <table style="min-width:560px;">
             <thead>
@@ -108,9 +127,16 @@ const extraSchemaNodes = [
                 <th style="padding:12px 16px;">Reverse</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="pairs-tbody">
               {rows.map((row) => (
-                <tr style="border-top:1px solid #eee9e6;">
+                <tr
+                  data-pair-row
+                  data-sf-search={`${code} ${row.target} ${currencyProfile(row.target).name}`.toLowerCase()}
+                  data-sf-code={row.target}
+                  data-sf-rate={row.rateValue}
+                  data-sf-change={row.changePct}
+                  style="border-top:1px solid #eee9e6;"
+                >
                   <td style="padding:12px 16px;">
                     <a href={row.href} style="color:#0c0b0d; font-weight:700; font-family:'IBM Plex Mono', monospace;">
                       {code}/{row.target}
@@ -139,6 +165,9 @@ const extraSchemaNodes = [
               ))}
             </tbody>
           </table>
+          <p id="pairs-empty" hidden style="padding:16px; margin:0; color:#8b857f; font-size:14px;">
+            No currencies match your filter.
+          </p>
         </div>
 
         {rows.length === 0 && (
@@ -174,3 +203,25 @@ const extraSchemaNodes = [
     <BackToTop />
   </div>
 </Layout>
+
+<script>
+  import { wireSortFilter } from "../scripts/sort-filter";
+
+  const tbody = document.getElementById("pairs-tbody");
+  const empty = document.getElementById("pairs-empty");
+  if (tbody) {
+    wireSortFilter({
+      bar: document.getElementById("pairs-sf"),
+      container: tbody,
+      itemSelector: "[data-pair-row]",
+      countNoun: "currencies",
+      onApply: (matched, all) => {
+        for (const row of all) row.style.display = "none";
+        // Table rows have no single display value that works everywhere —
+        // clearing the property lets the UA's `table-row` apply again.
+        for (const row of matched) row.style.display = "";
+        if (empty) empty.hidden = matched.length > 0;
+      },
+    });
+  }
+</script>

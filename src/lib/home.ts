@@ -157,6 +157,9 @@ export type HeroChart = {
   label: string;
   rate: string;
   changeLabel: string;
+  /** The same figure as `changeLabel`, unformatted, so a client can sort on
+   *  it — "+0.1234%" only sorts correctly as a string by accident. */
+  changePct: number;
   direction: "up" | "down" | "flat";
   points: string;
   /** Vertical position of the last point, in % of the chart height, so the
@@ -223,6 +226,7 @@ export async function buildHeroChart(
     label: `${base}/${target}`,
     rate: formatRate(latest),
     changeLabel: `${changePct >= 0 ? "+" : ""}${changePct.toFixed(4)}%`,
+    changePct,
     direction: changePct > 0.01 ? "up" : changePct < -0.01 ? "down" : "flat",
     points,
     dotY: (lastY / 88) * 100,
@@ -250,6 +254,11 @@ export type RateRow = {
   direction: "up" | "down" | "flat";
   points: string;
   href: string;
+  /** `rate` and `changeLabel` as numbers. The board and the currency hub sort
+   *  on these in the browser, and neither formatted string survives a sort:
+   *  `formatRate` groups thousands with commas and trims trailing zeros. */
+  rateValue: number;
+  changePct: number;
 };
 
 // Every configured currency is triangulated through the USD table (see
@@ -286,6 +295,8 @@ async function computeQuoteRateRows(base: string): Promise<RateRow[]> {
       direction: changePct > 0.01 ? "up" : changePct < -0.01 ? "down" : "flat",
       points: sparkSvgPoints(distinctTail(values, 20), 120, 30, 3),
       href: pairUrl(base, target),
+      rateValue: latest,
+      changePct,
     };
   });
   return built.filter((row): row is RateRow => row !== null);

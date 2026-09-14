@@ -12,6 +12,7 @@
     "astro": "astro",
     "check": "astro check",
     "smoke": "node scripts/smoke.mjs",
+    "format-parity": "node scripts/format-parity.mjs",
     "start": "node ./dist/server/entry.mjs"
   },
   "dependencies": {

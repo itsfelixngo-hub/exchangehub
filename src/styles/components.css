@@ -20,10 +20,13 @@
   flex: 0 0 auto;
 }
 
-/* The currency links in the footer, and anywhere else a bare code is shown as
- * a chip. 27 per page, on every page. */
+/* The currency links in the footer, and anywhere else a code is shown as a
+ * chip. 27 per page, on every page. The flag is what makes a strip of codes
+ * scannable — `MYR` and `MXN` read alike at this size, their flags do not. */
 .ccy-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: 1px solid #2a2426;
   border-radius: 8px;
   background: #151315;
@@ -32,6 +35,153 @@
   font-weight: 600;
   padding: 6px 11px;
   font-family: "IBM Plex Mono", monospace;
+}
+.ccy-chip img {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* The filter-and-sort bar above a currency list — see SortFilterBar.astro.
+ * Drawn for the dark surfaces all three of its lists sit on. */
+.sf-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: "Manrope", Arial, sans-serif;
+}
+.sf-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 260px;
+  min-width: 170px;
+  background: #1c191b;
+  border: 1px solid #2a2426;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.sf-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f5f2f1;
+  font-size: 13px;
+  font-family: inherit;
+}
+.sf-search input::placeholder {
+  color: #746b66;
+}
+/* The dropdown itself — a listbox, not a `<select>`; see scripts/sort-menu.ts
+ * for why. The panel is positioned against this element. */
+.sf-menu {
+  position: relative;
+}
+.sf-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 178px;
+  background: #1c191b;
+  border: 1px solid #2a2426;
+  border-radius: 8px;
+  color: #f5f2f1;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 8px 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.sf-menu-btn svg {
+  flex: 0 0 auto;
+  color: #a79fa0;
+  transition: transform 0.15s ease;
+}
+.sf-menu-btn[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+/* An author `display` always outranks the UA's `[hidden] { display: none }`,
+ * so the panel needs its own closed state or the attribute the script toggles
+ * does nothing and the dropdown reads as dead. */
+.sf-menu-panel[hidden] {
+  display: none;
+}
+.sf-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #151315;
+  border: 1px solid #2a2426;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+}
+.sf-menu-option {
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  color: #a79fa0;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sf-menu-option:hover,
+.sf-menu-option:focus-visible {
+  background: #1c191b;
+  color: #f5f2f1;
+  outline: none;
+}
+.sf-menu-option[aria-selected="true"] {
+  background: #1c191b;
+  color: #f5f2f1;
+  font-weight: 600;
+}
+.sf-count {
+  color: #746b66;
+  font-size: 12.5px;
+}
+
+/* The sort dropdown on its own, sitting inside a row that already has a
+ * heading of its own — the board's base-currency bar. No caption: the option
+ * labels ("Change: high to low") say what it is, and the bar has no room. */
+.sf-bar-compact .sf-menu-btn {
+  background: #151315;
+  border-radius: 999px;
+  color: #a79fa0;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  min-width: 0;
+}
+.sf-bar-compact .sf-menu-btn:hover {
+  color: #f5f2f1;
+}
+
+/* The header's menu toggle carries both icons; only one is ever drawn. The
+ * rule lives here rather than in responsive.css because it is not about width:
+ * whenever the toggle is on screen, its icon has to match the drawer's state. */
+.hdr-menu .hdr-menu-close,
+.hdr-menu[aria-expanded="true"] .hdr-menu-open {
+  display: none;
+}
+.hdr-menu[aria-expanded="true"] .hdr-menu-close {
+  display: block;
 }
 
 /* A row in a currency dropdown: flag, code, name. The panels sit on a light
@@ -68,4 +218,20 @@
   font-weight: 600;
   margin-top: 4px;
   color: #f5f2f1;
+}
+/* A rate like 0.00003332 is wider than a third of a card on a phone, and a
+ * grid track defaults to its content's minimum width — so the row pushed
+ * itself past the card's edge. The tracks are `minmax(0,1fr)` where they are
+ * declared; this is the other half of the same fix.
+ *
+ * The label may be ellipsised, the number may not: half a rate is not a
+ * shorter rate, it is a different one, and "0.0000…" reads as a broken page.
+ * If one ever fails to fit, it wraps and the tile grows. */
+.rate-card-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rate-card-value {
+  overflow-wrap: anywhere;
 }

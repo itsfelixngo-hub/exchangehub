@@ -1,6 +1,6 @@
 ---
 import type { MenuModel } from "../lib/menu";
-import { SWAP_ICON } from "../lib/flags";
+import { SWAP_ICON, flagSrc } from "../lib/flags";
 import { INFO_LINKS } from "../lib/info";
 import { configCurrencies, currencyUrl } from "../lib/config";
 
@@ -93,15 +93,21 @@ const bottomLinks = secondary === "company" ? [] : INFO_LINKS;
     <div style="border-top:1px solid #2a2426; margin-top:32px; padding-top:16px;">
       <h2 style="margin:0 0 12px; font-size:13px; color:#f5f2f1; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Rates by currency</h2>
       <div style="display:flex; flex-wrap:wrap; gap:8px;">
-        {configCurrencies().map((code) => (
-          <a
-            translate="no"
-            href={currencyUrl(code)}
-            class="ccy-chip"
-          >
-            {code}
-          </a>
-        ))}
+        {configCurrencies().map((code) => {
+          // Not every configured currency ships a flag file; the chip reads
+          // fine as a bare code, so a missing one is skipped, not defaulted.
+          const flag = flagSrc(code);
+          return (
+            <a
+              translate="no"
+              href={currencyUrl(code)}
+              class="ccy-chip"
+            >
+              {flag && <img src={flag} alt="" width="16" height="16" loading="lazy" decoding="async" />}
+              {code}
+            </a>
+          );
+        })}
       </div>
     </div>
     {bottomLinks.length > 0 && (

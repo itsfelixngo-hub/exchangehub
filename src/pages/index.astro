@@ -5,6 +5,7 @@ import Layout from "../layouts/Layout.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import BackToTop from "../components/BackToTop.astro";
+import SortFilterBar from "../components/SortFilterBar.astro";
 import { buildHomeModel, buildQuoteRateRows } from "../lib/home";
 import { buildMenuModel } from "../lib/menu";
 import { CURRENCY_PROFILES, MAJOR_COLUMNS, configCurrencies } from "../lib/config";
@@ -58,6 +59,19 @@ const [model, rateRows] = await Promise.all([
 ]);
 const menu = buildMenuModel();
 const VISIBLE_RATE_ROWS = 8;
+
+// `order` is the order buildQuoteRateRows returns — configCurrencies() order,
+// which puts USD and the majors first. The rest read the numbers the rows
+// carry as data attributes; see scripts/sort-filter.ts.
+const RATE_SORT_OPTIONS = [
+  { value: "order-asc", label: "Default" },
+  { value: "code-asc", label: "Currency A-Z" },
+  { value: "code-desc", label: "Currency Z-A" },
+  { value: "change-desc", label: "Change: high to low" },
+  { value: "change-asc", label: "Change: low to high" },
+  { value: "rate-desc", label: "Rate: high to low" },
+  { value: "rate-asc", label: "Rate: low to high" },
+];
 
 const converterRate = model.latestUsdTable[converterTarget] && model.latestUsdTable[converterFrom]
   ? model.latestUsdTable[converterTarget] / model.latestUsdTable[converterFrom]
@@ -136,7 +150,8 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             )}
             <div
               id="hero-tiles"
-              style={`display:${model.hero.secondary.length > 0 ? "grid" : "none"}; grid-template-columns:repeat(${model.hero.secondary.length || 3},1fr); gap:10px; margin-top:22px;`}
+              class="rate-card-row"
+              style={`display:${model.hero.secondary.length > 0 ? "grid" : "none"}; grid-template-columns:repeat(${model.hero.secondary.length || 3},minmax(0,1fr)); gap:10px; margin-top:22px;`}
             >
               {model.hero.secondary.map((item) => (
                 <a href={item.href} class="rate-card">
@@ -220,6 +235,11 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
         <!-- Read by both this page's scripts; see currencyMeta above. -->
         <script type="application/json" id="currency-meta" is:inline set:html={currencyMeta} />
         <script>
+          // The converter used to carry its own copy of this, which had drifted
+          // from the real one: it was missing the small-value guard, so a
+          // conversion under 1e-8 came out as a flat "0".
+          import { formatRate } from "../lib/format";
+
           (function () {
             const card = document.getElementById("conv-card");
             const metaEl = document.getElementById("currency-meta");
@@ -251,15 +271,6 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               const t = rates[target];
               if (!b || !t) return null;
               return t / b;
-            }
-
-            function formatRate(value: number) {
-              const num = Number(value);
-              const abs = Math.abs(num);
-              if (num === 0) return "0";
-              if (abs < 1) return String(num.toFixed(8)).replace(/0+$/, "").replace(/\.$/, "");
-              if (abs < 1000) return String(num.toFixed(6)).replace(/0+$/, "").replace(/\.$/, "");
-              return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             }
 
             function setButtonCode(btn: HTMLElement, code: string) {
@@ -393,7 +404,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                   const items = data.secondary || [];
                   if (tiles) {
                     tiles.style.display = items.length ? "grid" : "none";
-                    tiles.style.gridTemplateColumns = `repeat(${items.length || 3},1fr)`;
+                    tiles.style.gridTemplateColumns = `repeat(${items.length || 3},minmax(0,1fr))`;
                     tiles.innerHTML = items.map((item: { href: string; label: string; rate: string }) => `
                       <a href="${item.href}" class="rate-card">
                         <div translate="no" class="rate-card-label">${item.label}</div>
@@ -442,7 +453,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               <span id="rates-bar-label" translate="no" style="color:#f5f2f1; font-weight:700; font-size:15px;">{CURRENCY_PROFILES[quote]?.name ?? quote} ({quote})</span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a79fa0" stroke-width="2.4" set:html={CHEVRON_DOWN} />
             </div>
-            <span style="color:#a79fa0; font-size:14px;">1</span>
+            <SortFilterBar id="rates-sortbar" parts="sort" options={RATE_SORT_OPTIONS} compact />
           </div>
 
           <div class="rates-split" style="display:flex; align-items:stretch;">
@@ -499,6 +510,10 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                   <div
                     data-rate-row
                     class="rate-row"
+                    data-sf-search={`${row.target} ${CURRENCY_PROFILES[row.target]?.name ?? ""}`.toLowerCase()}
+                    data-sf-code={row.target}
+                    data-sf-rate={row.rateValue}
+                    data-sf-change={row.changePct}
                     style={`display:${i >= VISIBLE_RATE_ROWS ? "none" : "flex"}; align-items:center; padding:20px 24px; ${i < rateRows.length - 1 ? "border-bottom:1px solid #2a2426;" : ""} ${i % 2 === 1 ? "background:#1c191b;" : ""}`}>
                     <span class="rr-code" translate="no" style="flex:0 0 68px; color:#f5f2f1; font-weight:700; font-size:16px;">{row.target}</span>
                     <span class="rr-rate" translate="no" style="flex:0 0 132px; text-align:right; font-variant-numeric:tabular-nums; color:#f5f2f1; font-weight:700; font-size:16px;">{row.rate}</span>
@@ -532,6 +547,8 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
         </div>
 
         <script>
+          import { wireSortFilter } from "../scripts/sort-filter";
+
           (function () {
             const metaEl = document.getElementById("currency-meta");
             if (!metaEl) return;
@@ -585,21 +602,23 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             type RateRow = {
               target: string; rate: string; changeLabel: string;
               direction: string; points?: string; href: string;
+              rateValue: number; changePct: number;
             };
 
             const renderRows = (rows: RateRow[]) => {
-              rowsList.innerHTML = rows.map((row, i) => {
+              rowsList.innerHTML = rows.map((row) => {
                 const c = directionColors(row.direction);
-                const border = i < rows.length - 1 ? "border-bottom:1px solid #2a2426;" : "";
-                const stripe = i % 2 === 1 ? "background:#1c191b;" : "";
-                const display = i >= step ? "none" : "flex";
                 const spark = row.points
                   ? `<svg class="rr-spark" width="120" height="30" viewBox="0 0 120 30" style="margin-left:28px; flex:0 0 auto;" preserveAspectRatio="none"><polyline points="${row.points}" fill="none" stroke="${row.direction === "down" ? "#ff4d6d" : "#34d399"}" stroke-width="2"/></svg>`
                   : "";
-                // Class names here must match the server-rendered row above —
-                // the responsive rules key off them, and this markup replaces
-                // that one wholesale when the quote currency changes.
-                return `<div data-rate-row class="rate-row" style="display:${display}; align-items:center; padding:20px 24px; ${border} ${stripe}">
+                const search = `${row.target} ${names[row.target] || ""}`.toLowerCase();
+                // Class names and data attributes here must match the
+                // server-rendered row above — the responsive rules and the
+                // sort bar key off them, and this markup replaces that one
+                // wholesale when the quote currency changes. Zebra stripes,
+                // borders and which rows are visible are left to applyRows,
+                // since sorting and filtering change all three.
+                return `<div data-rate-row class="rate-row" data-sf-search="${search}" data-sf-code="${row.target}" data-sf-rate="${row.rateValue}" data-sf-change="${row.changePct}" style="display:none; align-items:center; padding:20px 24px;">
                   <span class="rr-code" translate="no" style="flex:0 0 68px; color:#f5f2f1; font-weight:700; font-size:16px;">${row.target}</span>
                   <span class="rr-rate" translate="no" style="flex:0 0 132px; text-align:right; font-variant-numeric:tabular-nums; color:#f5f2f1; font-weight:700; font-size:16px;">${row.rate}</span>
                   <span class="rr-change" translate="no" style="flex:0 0 auto; min-width:86px; margin-left:16px; text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; background:${c.bg}; color:${c.fg}; font-size:13px; font-weight:600; padding:5px 11px; border-radius:999px;">${row.changeLabel}</span>
@@ -612,18 +631,42 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
                 </div>`;
               }).join("");
               shown = step;
-              if (ratesEmpty) ratesEmpty.style.display = rows.length === 0 ? "block" : "none";
-              if (loadMore) loadMore.style.display = rows.length > step ? "block" : "none";
+              sortFilter.refresh();
             };
+
+            // Stripes and the bottom border follow the rows the visitor can
+            // actually see: after a sort or a filter the every-other-row
+            // shading has to be recomputed, or it lands on rows that are no
+            // longer alternating.
+            const applyRows = (matched: HTMLElement[], all: HTMLElement[]) => {
+              for (const row of all) row.style.display = "none";
+              const visible = matched.slice(0, shown);
+              visible.forEach((row, i) => {
+                row.style.display = "flex";
+                row.style.background = i % 2 === 1 ? "#1c191b" : "transparent";
+                row.style.borderBottom = i < visible.length - 1 ? "1px solid #2a2426" : "none";
+              });
+              if (ratesEmpty) ratesEmpty.style.display = matched.length === 0 ? "block" : "none";
+              if (loadMore) loadMore.style.display = matched.length > shown ? "block" : "none";
+            };
+
+            // The board sorts but does not filter: the picker beside it already
+            // searches currencies, and a second search box over the same list
+            // was one too many.
+            const sortFilter = wireSortFilter({
+              bar: document.getElementById("rates-sortbar"),
+              container: rowsList,
+              itemSelector: "[data-rate-row]",
+              // Re-sorting rebuilds the list the visitor is looking at, so the
+              // "Load more" cut-off starts over with it.
+              onInput: () => { shown = step; },
+              onApply: applyRows,
+            });
 
             if (loadMore) {
               loadMore.addEventListener("click", () => {
                 shown += step;
-                const rows = rowsList.querySelectorAll<HTMLElement>("[data-rate-row]");
-                rows.forEach((row, i) => {
-                  if (i < shown) row.style.display = "flex";
-                });
-                if (shown >= rows.length) loadMore.style.display = "none";
+                sortFilter.apply();
               });
             }
 
@@ -654,6 +697,8 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
               const barFlagSrc = flags[code];
               if (barFlag && barFlagSrc) barFlag.src = barFlagSrc;
               if (barLabel) barLabel.textContent = `${names[code] || code} (${code})`;
+              // The empty line names the base currency, which the picker changes.
+              if (ratesEmpty) ratesEmpty.textContent = `No stored rates yet for ${code}.`;
               const token = ++rowsRequest;
               fetch(`/api/rates?quote=${encodeURIComponent(code)}`)
                 .then((res) => res.json())

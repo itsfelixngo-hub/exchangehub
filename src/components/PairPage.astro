@@ -618,13 +618,58 @@ const TOOL_TABS = [
       const H = 260;
       const PAD = 18;
 
+      // The plot, the axis and the x labels all have to agree on how wide the
+      // price column is. Measuring beats guessing: the widest label depends on
+      // the pair (a VND rate is three times the width of a EUR one), on the
+      // font size, which the mobile rules change, and on the visitor's own
+      // text scaling.
+      const brush = document.querySelector(".pair-brush");
+
+      function sizeAxisGutter() {
+        if (!axis || !wrap) return;
+        axis.style.width = "auto";
+        let widest = 0;
+        for (const label of axis.children) {
+          widest = Math.max(widest, label.getBoundingClientRect().width);
+        }
+        const gutter = Math.ceil(widest) + 10;
+        axis.style.width = `${gutter}px`;
+        // Everything that has to line up with the plot's right edge: the
+        // labels under it and the brush strip below them.
+        wrap.style.paddingRight = `${gutter}px`;
+        if (xLabels) xLabels.style.paddingRight = `${gutter}px`;
+        if (brush) brush.style.marginRight = `${gutter}px`;
+      }
+
+      // Rotating a phone crosses the breakpoint that changes the label size,
+      // and a font that loads late remeasures wider than the fallback did.
+      let gutterTimer = 0;
+      window.addEventListener("resize", () => {
+        clearTimeout(gutterTimer);
+        gutterTimer = window.setTimeout(sizeAxisGutter, 120);
+      });
+
+      // A copy of lib/format.ts's formatRate, kept in step with it by the
+      // sweep in scripts/format-parity.mjs. It cannot import: this script
+      // carries `define:vars`, which forces it inline.
+      //
+      // Read that one for why the decimal cap gives way to significant digits
+      // — in short, the axis interpolates its own tick values, and rounding a
+      // small one to a fixed eight places prints a rate as "0".
       function formatRate(value) {
         const num = Number(value);
+        if (!Number.isFinite(num)) return "—";
         const abs = Math.abs(num);
         if (num === 0) return "0";
-        if (abs < 1) return String(num.toFixed(8)).replace(/0+$/, "").replace(/\.$/, "");
-        if (abs < 1000) return String(num.toFixed(6)).replace(/0+$/, "").replace(/\.$/, "");
-        return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (abs >= 1000) {
+          return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        const trim = (text) => (text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text);
+        if (abs >= 1) return trim(num.toFixed(6));
+        const decimals = Math.min(20, Math.max(8, Math.ceil(-Math.log10(abs)) + 3));
+        const text = trim(num.toFixed(decimals));
+        if (Number(text) === 0) return num.toExponential(4);
+        return text;
       }
 
       const spanSeconds = series[series.length - 1][0] - series[0][0];
@@ -674,8 +719,13 @@ const TOOL_TABS = [
         const ticks = [20, 80, 140, 200, 240];
         axis.innerHTML = ticks.map((y) => {
           const value = s.low + (1 - (y - PAD) / (H - PAD * 2)) * s.span;
-          return `<div style="position:absolute; top:${(y / H) * 100}%; left:8px; transform:translateY(-50%);">${formatRate(value)}</div>`;
+          return `<div style="position:absolute; top:${(y / H) * 100}%; right:0; transform:translateY(-50%);">${formatRate(value)}</div>`;
         }).join("");
+        // The gutter was a fixed 66px, which is one label wide for EUR-sized
+        // numbers and far too narrow for "25,987.53" — those labels ran off
+        // the right edge of the card. Measure what was actually rendered and
+        // give the axis exactly that much room, plus a gap from the plot.
+        sizeAxisGutter();
 
         const first = points[0];
         const last = points[points.length - 1];
