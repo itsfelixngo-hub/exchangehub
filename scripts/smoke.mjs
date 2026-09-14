@@ -157,6 +157,9 @@ try {
   const pairsSection = await (await fetch(`${BASE}/sitemap-pairs.xml`)).text();
   check("pairs section lists a stored pair", pairsSection.includes(`<loc>${SITE}/usd-vnd</loc>`));
   check("pairs section lists a derived pair", pairsSection.includes(`<loc>${SITE}/vnd-eur</loc>`));
+  // A stored pair answers in both directions, so both belong here. Google was
+  // already ranking /usd-myr while it appeared in no sitemap.
+  check("pairs section lists a stored pair reversed", pairsSection.includes(`<loc>${SITE}/usd-myr</loc>`));
   check("pairs section holds no duplicates", (() => {
     const locs = pairsSection.match(/<loc>[^<]+<\/loc>/g) ?? [];
     return locs.length === new Set(locs).size;

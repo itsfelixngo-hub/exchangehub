@@ -129,8 +129,23 @@ export function pairKey(base: string, target: string): string {
 // a side effect of a deploy. Turn it off again once those pages carry writing
 // of their own.
 /**
- * Every pair page the site serves, deduplicated: the stored pairs plus the
- * hand-picked menu ones, which include derived pairs with no stored file.
+ * Every pair page the site serves, deduplicated. Three sources:
+ *
+ *  - the stored pairs, which are all quoted against USD (EUR/USD, MYR/USD…)
+ *  - the reverse of each stored pair (USD/EUR, USD/MYR…)
+ *  - the hand-picked menu pairs, which include derived pairs with no stored
+ *    file of their own
+ *
+ * The reverses matter: a pair page has always answered in both directions,
+ * and Google had already indexed several of them — /usd-myr and /usd-idr were
+ * ranking while appearing in no sitemap at all, found by following the links
+ * in the converter and the menu. They were real pages the site simply never
+ * declared.
+ *
+ * This is deliberately not "every combination": any two configured currencies
+ * make a valid URL, which is 700-odd pages, and most of them nobody asks for.
+ * Stored data in both directions, plus the curated set, is the line.
+ *
  * Shared by the sitemap (which then drops the noindexed ones) and the analysis
  * index (which does not — a page kept out of search still works for a reader).
  */
@@ -142,6 +157,7 @@ export function allPairs(): readonly [string, string][] {
   const out: [string, string][] = [];
   for (const [base, target] of [
     ...RATE_PAIRS,
+    ...RATE_PAIRS.map(([base, target]) => [target, base] as [string, string]),
     ...Object.entries(MENU_GROUPS).flatMap(([base, targets]) =>
       targets.filter((target) => target !== base).map((target) => [base, target] as [string, string])),
   ]) {
