@@ -25,10 +25,30 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // and forth without sharing state. Falls back to a per-process key exactly
 // like the old app's `secrets.token_hex(32)` default; set CONTACT_SECRET (or
 // SECRET_KEY) so a restart mid-form doesn't invalidate it.
-const CHALLENGE_SECRET = process.env.CONTACT_SECRET
-  ?? process.env.SECRET_KEY
-  ?? process.env.FLASK_SECRET_KEY
-  ?? crypto.randomBytes(32).toString("hex");
+//
+// Blank counts as unset. A chain of `??` would not: `??` only steps past null
+// and undefined, so a `CONTACT_SECRET=` left empty in .env would have been
+// taken as the key — an empty HMAC key, which anyone can forge a challenge
+// against, and no symptom to notice. Falling through to a random key is the
+// safer end of that mistake: it makes people re-solve the puzzle after a
+// deploy, which someone reports.
+const CONFIGURED_SECRET = [
+  process.env.CONTACT_SECRET,
+  process.env.SECRET_KEY,
+  process.env.FLASK_SECRET_KEY,
+]
+  .map((value) => value?.trim())
+  .find((value) => value);
+
+if (!CONFIGURED_SECRET) {
+  // Worth a line in the log: the form still works, but every deploy and every
+  // restart invalidates a challenge someone is part-way through.
+  console.warn(
+    "No CONTACT_SECRET (or SECRET_KEY / FLASK_SECRET_KEY): signing contact challenges with a per-process key.",
+  );
+}
+
+const CHALLENGE_SECRET = CONFIGURED_SECRET ?? crypto.randomBytes(32).toString("hex");
 
 export const CHALLENGE_COOKIE = "contact_challenge";
 export const CHALLENGE_MAX_AGE_SECONDS = 60 * 30;
