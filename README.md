@@ -239,7 +239,7 @@ git push origin main
 -> starts the new container on 127.0.0.1:5003 or 127.0.0.1:5004
 -> checks /healthz, then warms it with a real page request
 -> switches the nginx upstream and reloads Nginx
--> removes the old container
+-> waits DRAIN_SECONDS, then stops and removes the container it replaced
 -> prints /healthz so the job log records which build went live
 ```
 
@@ -267,7 +267,25 @@ Variables):
 SWITCH_NGINX        # 'true' (default); 'false' stages without moving traffic
 DEPLOY_FETCHER_MAIL # 'false' (default); 'true' rebuilds and recreates the
                     # fetcher and mailserver as well — see below
+DRAIN_SECONDS       # '10' (default); how long the replaced container lives on
+                    # after the nginx reload — see below
 ```
+
+### Why a deploy does not drop requests
+
+The new container is built and started on the *other* port of the pair, so
+nothing production serves is touched until it has answered `/healthz` and
+rendered one real page. A deploy that fails does so with no visitor impact at
+all: the health check removes the new container and exits non-zero, before nginx
+has been reloaded and while the old container is still serving.
+
+`nginx -s reload` then swaps the upstream without refusing a connection, and the
+old nginx workers finish the requests they had already accepted. Those workers
+still hold the old config, though, so they are still talking to the old
+container — which is why it is left running for `DRAIN_SECONDS` (10 by default)
+instead of being killed the moment reload returns. Nothing in the image acts on
+`SIGTERM`, so waiting is what protects those responses; the ceiling worth
+covering is nginx's own `proxy_read_timeout` of 60s.
 
 ### The fetcher and the mailserver are not part of a deploy
 

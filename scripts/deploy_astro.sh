@@ -50,6 +50,30 @@ UPLOADS_HOST_PATH="${UPLOADS_HOST_PATH:-${APP_DIR}/wp-content/uploads}"
 # again with the default to flip.
 SWITCH_NGINX="${SWITCH_NGINX:-true}"
 
+# How long the old container keeps running after nginx has been reloaded onto
+# the new one.
+#
+# `nginx -s reload` is graceful in the direction people usually mean: no
+# connection is refused, and the old worker processes finish the requests they
+# already accepted before they exit. But those workers still hold the OLD
+# configuration, so they are still proxying to the old container. Removing it
+# the instant reload returns cuts those responses mid-flight, which is a 502 for
+# a visitor who did nothing but arrive at the wrong moment.
+#
+# Waiting is the only thing that protects them. Draining on the container side
+# is not available: @astrojs/node's standalone server installs no SIGTERM
+# handler, so Node takes the default action and terminates, and `docker stop`
+# cannot make that graceful -- its grace period only decides how long until
+# SIGKILL follows.
+#
+# 10s against the proxy_read_timeout of 60s in
+# deploy/nginx-ratehubfx-astro-proxy.conf is a deliberate trade: it covers every
+# ordinary response, which this site serves in 10-250ms, without making every
+# deploy sit for a minute waiting on a slow request that is probably not there.
+# Set DRAIN_SECONDS=60 to cover the worst case nginx will allow, or 0 for the
+# old behaviour.
+DRAIN_SECONDS="${DRAIN_SECONDS:-10}"
+
 cd "$APP_DIR"
 
 if [[ "${SKIP_GIT_FETCH:-false}" != "true" ]]; then
@@ -193,7 +217,19 @@ sudo nginx -s reload
 
 printf "%s" "$new_color" > "$ACTIVE_FILE"
 
-docker rm -f "$old_container" >/dev/null 2>&1 || true
+# Traffic is on the new container now; see DRAIN_SECONDS for why the old one is
+# not killed on the spot.
+if docker inspect "$old_container" >/dev/null 2>&1; then
+  if [[ "$DRAIN_SECONDS" -gt 0 ]]; then
+    echo "Draining $old_container for ${DRAIN_SECONDS}s before stopping it..."
+    sleep "$DRAIN_SECONDS"
+  fi
+  # SIGTERM with a grace period rather than rm -f's immediate SIGKILL. Nothing
+  # in the image acts on SIGTERM today, so this changes nothing yet -- it is
+  # here so that adding a shutdown handler is all it would take.
+  docker stop --time 10 "$old_container" >/dev/null 2>&1 || true
+  docker rm -f "$old_container" >/dev/null 2>&1 || true
+fi
 
 # Nothing else to stop: the Flask web containers this used to leave running for
 # an instant rollback are gone, and so is the code. Rolling back to Flask now

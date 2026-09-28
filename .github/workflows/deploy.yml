@@ -110,6 +110,10 @@ jobs:
           # real page request proves the container can reach R2. Verify, then
           # set it back to 'true' (or delete the variable) and re-run Deploy.
           SWITCH_NGINX: ${{ vars.SWITCH_NGINX || 'true' }}
+          # Seconds the superseded container keeps running after nginx has been
+          # reloaded, so requests already in flight through the old nginx
+          # workers are not cut. See DRAIN_SECONDS in scripts/deploy_astro.sh.
+          DRAIN_SECONDS: ${{ vars.DRAIN_SECONDS || '10' }}
           # Off, so an ordinary deploy replaces the web tier and nothing else.
           # The fetcher and the mailserver are one long-lived container each,
           # and deploy_fetcher_mail.sh recreates rather than reloads them:
@@ -148,6 +152,7 @@ jobs:
           export BRANCH="$DEPLOY_BRANCH"
           export SKIP_GIT_FETCH
           export SWITCH_NGINX
+          export DRAIN_SECONDS
 
           # Mailserver and the single fetcher container. Neither is the
           # website, and neither touches the blue/green ports. Off by default,
