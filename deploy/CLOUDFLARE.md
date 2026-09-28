@@ -13,27 +13,26 @@ misread.
 ## The shape of it
 
 ```
-visitor ──TLS──> Cloudflare edge ──TLS──> nginx (VPS) ──HTTP──> gunicorn
+visitor ──TLS──> Cloudflare edge ──TLS──> nginx (VPS) ──HTTP──> Node (Astro)
                   cache, WAF          SNI splits two sites      blue/green
-                                      ratehubfx / alogweb       5001 or 5002
+                                      ratehubfx / alogweb       5003 or 5004
 ```
 
-Two sites share one VPS and one pair of ports. They are told apart by SNI, so
-each needs its own certificate. `alogweb` was configured first; its file sorts
-before `exchangehub.conf`, which makes it the implicit default server — any
+Two sites share one VPS. They are told apart by SNI, so each needs its own
+certificate. `alogweb` was configured first; its file sorts before
+`exchangehub-astro.conf`, which makes it the implicit default server — any
 request whose SNI matches neither lands there.
 
 | Thing | Where it lives |
 |---|---|
-| Site config | `/etc/nginx/sites-enabled/exchangehub.conf` — copied by hand from `deploy/nginx-exchangehub.conf` |
-| Shared proxy block | `/etc/nginx/snippets/ratehubfx-proxy.conf` |
-| Upstream (blue/green port) | `/etc/nginx/conf.d/exchangehub-upstream.conf` — **rewritten by every deploy** |
+| Site config | `/etc/nginx/sites-enabled/exchangehub-astro.conf` — copied by hand from `deploy/nginx-exchangehub-astro.conf` |
+| Shared proxy block | `/etc/nginx/snippets/ratehubfx-astro-proxy.conf` |
+| Upstream (blue/green port) | `/etc/nginx/conf.d/exchangehub-astro-upstream.conf` — **rewritten by every deploy** |
 | Cloudflare address ranges | `/etc/nginx/conf.d/00-cloudflare-realip.conf` |
 | Certificates | `/etc/ssl/cloudflare/` |
 
 Only the upstream file is automatic. Pushing to `main` never updates the site
-config; `deploy_blue_green.sh` writes the upstream and reloads nginx, nothing
-more.
+config; `deploy_astro.sh` writes the upstream and reloads nginx, nothing more.
 
 ---
 
@@ -339,7 +338,7 @@ curl -s https://ratehubfx.com/healthz
 | API `9109` — cannot use token from location | token restricted by IP, this machine is not listed | run it from an allowed address |
 | API `10000` — authentication error | token lacks the scope for that call | add the permission above; the script lists every missing scope in one run |
 | Rate limits fire for ordinary visitors | `cloudflare-realip.sh` has not run, so everyone shares a few edge addresses | run it, reload nginx |
-| 502 after a deploy | the site config points at a fixed port instead of the upstream | `proxy_pass http://exchangehub_backend` — the port alternates 5001/5002 |
+| 502 after a deploy | the site config points at a fixed port instead of the upstream | `proxy_pass http://exchangehub_astro_backend` — the port alternates 5003/5004 |
 
 ---
 

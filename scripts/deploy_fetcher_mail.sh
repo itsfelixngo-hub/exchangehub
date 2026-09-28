@@ -3,10 +3,15 @@
 # form sends through, and the single fetcher container that pulls rates and
 # writes them to R2.
 #
-# On this branch the website is the Astro app — scripts/deploy_astro.sh owns
-# the blue/green ports, the nginx upstream and the active-colour file. This
-# script touches none of them. (It began as deploy_blue_green.sh, which also
-# deployed the Flask web tier; main's copy still does.)
+# The website is scripts/deploy_astro.sh, which owns the blue/green ports, the
+# nginx upstream and the active-colour file. This script touches none of them.
+# (It began as deploy_blue_green.sh, which deployed the Flask web tier too;
+# that script went with the app.)
+#
+# A deploy does NOT run this by default: it recreates both containers, and
+# restarting the fetcher costs an extra OpenExchangeRates call. Run it when the
+# fetcher or the mail setup actually changed — see DEPLOY_FETCHER_MAIL in
+# .github/workflows/deploy.yml.
 #
 # The fetcher runs from the Python image built by Dockerfile.fetcher.
 set -euo pipefail

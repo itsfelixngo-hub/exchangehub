@@ -6,8 +6,8 @@ import "./env";
 // proxies to the Node server over plain HTTP, so the request the app sees is
 // `http://` on an internal port, and every canonical came out as
 // `http://ratehubfx.com/…` — a different URL from the https one Google
-// crawls. The Flask app this replaces solved it with ProxyFix; this is the
-// same job, reading the headers nginx sets (see deploy/nginx-ratehubfx-proxy.conf).
+// crawls. The Flask app this replaces solved it with ProxyFix; this is the same
+// job, reading the headers nginx sets (deploy/nginx-ratehubfx-astro-proxy.conf).
 //
 // SITE_URL wins when set, so the answer cannot depend on a header at all.
 // Otherwise X-Forwarded-Proto and X-Forwarded-Host are trusted — which is

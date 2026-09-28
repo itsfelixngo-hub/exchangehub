@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
-# Blue/green deploy for the Astro site at the repo root, which replaces the
-# Flask app as the thing nginx serves.
-#
-# It reuses the machinery deploy_blue_green.sh already established rather than
-# inventing a second one: the same two ports, the same active-colour file, the
-# same /etc/nginx/conf.d/<app>-upstream.conf that the vhost includes. So no
-# nginx config has to change to switch stacks — the upstream file just starts
-# naming an Astro container.
+# Blue/green deploy for the Astro site at the repo root — the web tier, and
+# only the web tier.
 #
 # What this script deliberately does NOT touch:
-#   - the mailserver, which the contact form still sends through
-#   - the fetcher, which is what writes the rate JSON the Astro app reads
-# Both stay owned by deploy_blue_green.sh. This script only replaces the web
-# tier, and stops the Flask web containers once the Astro one is serving.
+#   - the mailserver, which the contact form sends through
+#   - the fetcher, which writes the rate JSON the site reads
+# Those are scripts/deploy_fetcher_mail.sh, which the Deploy workflow runs only
+# when DEPLOY_FETCHER_MAIL is set: both are long-lived single containers, and
+# recreating the fetcher costs an extra OpenExchangeRates call for nothing.
 set -euo pipefail
 
 APP_NAME="${APP_NAME:-exchangehub}"
@@ -20,12 +15,10 @@ APP_DIR="${APP_DIR:-/home/deploy/apps/exchangehub}"
 BRANCH="${BRANCH:-main}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 NETWORK_NAME="${NETWORK_NAME:-${APP_NAME}_net}"
-# Its own pair of ports, its own active-colour file and its own upstream file,
-# all separate from the Flask app's 5001/5002. That is what lets both stacks
-# run at the same time: the old site keeps serving while this one is built and
-# checked, and switching between them is an nginx vhost change rather than a
-# redeploy. It also removes a trap -- sharing the ports meant a rollback left
-# an Astro container squatting on the port the next Flask deploy needed.
+# 5003/5004 rather than the 5001/5002 the Flask app used, and its own
+# active-colour and upstream files: the separation is what let the two stacks
+# run at once during the cutover. Flask is gone, but the names stay -- renaming
+# them now would mean editing the vhost, the upstream file and the secrets.
 ASTRO_BLUE_PORT="${ASTRO_BLUE_PORT:-5003}"
 ASTRO_GREEN_PORT="${ASTRO_GREEN_PORT:-5004}"
 ACTIVE_FILE="${ACTIVE_FILE:-.deploy-active-color-astro}"
@@ -73,7 +66,7 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-# Same reader deploy_blue_green.sh uses, so both scripts see one .env the same
+# Same reader deploy_fetcher_mail.sh uses, so both scripts see one .env the same
 # way. `cut -d= -f2-` keeps '=' inside values (base64 secrets, URLs).
 env_value() {
   local key="$1"
@@ -202,12 +195,9 @@ printf "%s" "$new_color" > "$ACTIVE_FILE"
 
 docker rm -f "$old_container" >/dev/null 2>&1 || true
 
-# The Flask containers are deliberately left running. They are on their own
-# ports (5001/5002) and their own nginx upstream, so they cost a little memory
-# and nothing else -- and keeping them up is what makes the rollback instant:
-# re-enable the old vhost, reload nginx, done. Stop them when you are sure:
-#
-#   docker rm -f ${APP_NAME}-web-blue ${APP_NAME}-web-green
+# Nothing else to stop: the Flask web containers this used to leave running for
+# an instant rollback are gone, and so is the code. Rolling back to Flask now
+# means checking out the flask-final tag.
 
 docker image prune -f >/dev/null 2>&1 || true
 

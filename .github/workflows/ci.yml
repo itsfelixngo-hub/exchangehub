@@ -33,8 +33,7 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q .
 
-      # The Flask web app is gone from this branch; the Python that is left is
-      # the rate fetcher, so that is what gets imported.
+      # The rate fetcher is the only Python left, so that is what gets imported.
       - name: Import the fetcher
         env:
           R2_ENABLED: 'false'

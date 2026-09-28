@@ -231,22 +231,21 @@ The runner user must have access to the application directory and Docker, and mu
 Flow:
 
 ```text
-git push origin astro
+git push origin main
 -> CI typechecks, builds and smoke-tests the site, and builds the fetcher image
--> the production self-hosted runner resets APP_DIR onto origin/astro
+-> the production self-hosted runner resets APP_DIR onto origin/main
 -> writes production .env from GitHub Secrets
 -> builds a new Docker image locally
--> starts the new Astro container on 127.0.0.1:5003 or 127.0.0.1:5004
+-> starts the new container on 127.0.0.1:5003 or 127.0.0.1:5004
 -> checks /healthz, then warms it with a real page request
--> switches the Astro nginx upstream and reloads Nginx
--> removes the old Astro container
+-> switches the nginx upstream and reloads Nginx
+-> removes the old container
 -> prints /healthz so the job log records which build went live
 ```
 
-The fetcher and mailserver are left alone unless `DEPLOY_FETCHER_MAIL=true`;
-which vhost visitors actually reach is a manual symlink, not a deploy step.
-
-Which app the web container runs is decided by the branch you deploy.
+A deploy replaces the web tier and nothing else. The fetcher and the mailserver
+are left alone unless `DEPLOY_FETCHER_MAIL=true`, and the vhost that decides
+what visitors reach is a file copied by hand, not a deploy step.
 
 GitHub repository secrets:
 
@@ -257,7 +256,8 @@ ASTRO_BLUE_PORT            # optional, defaults to 5003
 ASTRO_GREEN_PORT           # optional, defaults to 5004
 NGINX_ASTRO_UPSTREAM_CONF  # optional, defaults to
                            #   /etc/nginx/conf.d/exchangehub-astro-upstream.conf
-PROD_ENV                   # full production .env content, shared by both stacks
+PROD_ENV                   # full production .env content, read by the site and
+                           #   the fetcher alike
 ```
 
 GitHub repository **variables** (Settings → Secrets and variables → Actions →
@@ -265,79 +265,66 @@ Variables):
 
 ```text
 SWITCH_NGINX        # 'true' (default); 'false' stages without moving traffic
-DEPLOY_FETCHER_MAIL # 'false' (default); 'true' makes this branch deploy the
-                    # mailserver and fetcher too — set it once main is retired
+DEPLOY_FETCHER_MAIL # 'false' (default); 'true' rebuilds and recreates the
+                    # fetcher and mailserver as well — see below
 ```
 
-The mailserver and the fetcher are one container each, shared by both stacks:
-whichever deploy ran last owns them. While `main` still exists it deploys them,
-so this branch leaves them alone — recreating them would restart the fetcher
-and interrupt mail for a change that only touches the web tier. Once `main` is
-retired, nothing else deploys them: set `DEPLOY_FETCHER_MAIL=true` then, or the
-fetcher runs forever on whatever image main last built.
+### The fetcher and the mailserver are not part of a deploy
 
-### Which app is serving
+They are one long-lived container each, and `deploy_fetcher_mail.sh` recreates
+rather than reloads them. That is why `DEPLOY_FETCHER_MAIL` defaults to off:
 
-The **branch** is the switch, and each branch carries its own deploy workflow:
+- restarting the fetcher costs an extra OpenExchangeRates call, because
+  `fetch_entrypoint.sh` fetches immediately on start and only then sleeps five
+  minutes. The quota is 1,000 calls a month per app id.
+- restarting the mailserver drops connections, for a change that touched only
+  the web tier.
 
-- push or dispatch **`astro`** → this branch's workflow → the Astro app
-- push or dispatch **`main`** → main's untouched workflow → the Flask app
+So the fetcher keeps running on the image it was last built from, indefinitely.
+The cost is that a change to `fetch_rates.py` does not reach production on its
+own: set the variable to `'true'`, run Deploy once, set it back. Its quota state
+(`.deploy-state/`) and the mail data (`docker-data/`) are both gitignored, so
+the `git reset --hard` every deploy performs never touches them.
 
-Both reset the same `APP_DIR` checkout and write the same nginx upstream, so
-whichever ran last is what production serves. They share one concurrency group,
-so the two can never interleave.
-
-### First cutover
+### Staging a deploy without moving traffic
 
 `/healthz` deliberately reads no rate data, so it cannot tell a working deploy
 from one that cannot reach R2 — and on this site R2 is the only source of
 rates, with a failed read falling back to local files that are empty. That
 renders as a site with no rates rather than an error, which no health check
-catches. So do the first switch in two runs:
+catches. For a change where that is a real risk, deploy in two runs:
 
-1. Set `SWITCH_NGINX=false`, run Deploy. The Astro container is built,
-   health-checked and warmed on the idle port; nginx is not touched and
-   visitors stay on the old app. The job log prints the port and the curls to
-   run against it.
+1. Set `SWITCH_NGINX=false`, run Deploy. The container is built, health-checked
+   and warmed on the idle port; nginx is not touched and visitors stay on the
+   container that is serving. The job log prints the port and the curls to run
+   against it.
 2. Check a real page has real rates. Then set `SWITCH_NGINX=true` (or delete
    the variable) and run Deploy again to move traffic.
 
-### Switching between the two
+### The vhost is not deployed
 
-The two stacks run side by side on separate ports, so switching is an nginx
-vhost swap — seconds, no rebuild, and the other stack stays up the whole time.
-
-| | Flask (v1) | Astro (v2) |
-| :--- | :--- | :--- |
-| Ports | 5001 / 5002 | 5003 / 5004 |
-| Upstream | `exchangehub_backend` | `exchangehub_astro_backend` |
-| Upstream file | `conf.d/exchangehub-upstream.conf` | `conf.d/exchangehub-astro-upstream.conf` |
-| vhost | `deploy/nginx-exchangehub.conf` | `deploy/nginx-exchangehub-astro.conf` |
-
-**Only one vhost may be enabled.** They share a `server_name`, and with both
-enabled nginx does not fail — it warns about a conflicting server name and
-silently serves whichever it loaded first.
+`deploy/nginx-exchangehub-astro.conf` is a template. Production reads
+`/etc/nginx/sites-available/exchangehub-astro.conf`, which is a copy someone
+made by hand — a deploy rewrites only `conf.d/exchangehub-astro-upstream.conf`,
+the one line naming the live blue/green port. So a change to the vhost (a cache
+header, a new location block) does not reach production until you copy it:
 
 ```bash
-# to Astro
-sudo rm -f /etc/nginx/sites-enabled/exchangehub.conf
-sudo ln -sf /etc/nginx/sites-available/exchangehub-astro.conf \
-            /etc/nginx/sites-enabled/exchangehub-astro.conf
-sudo nginx -t && sudo nginx -s reload
-
-# back to Flask
-sudo rm -f /etc/nginx/sites-enabled/exchangehub-astro.conf
-sudo ln -sf /etc/nginx/sites-available/exchangehub.conf \
-            /etc/nginx/sites-enabled/exchangehub.conf
-sudo nginx -t && sudo nginx -s reload
+cd /home/deploy/apps/exchangehub
+sudo diff -u /etc/nginx/sites-available/exchangehub-astro.conf \
+             deploy/nginx-exchangehub-astro.conf
+sudo cp -a /etc/nginx/sites-available/exchangehub-astro.conf \
+           /etc/nginx/sites-available/exchangehub-astro.conf.bak-$(date +%F-%H%M%S)
+sudo cp deploy/nginx-exchangehub-astro.conf \
+        /etc/nginx/sites-available/exchangehub-astro.conf
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Deploying never moves traffic by itself: pushing `astro` builds and
-health-checks the site on 5003/5004 and stops there. The vhost decides who
-sees it.
+The site shares the VPS with `alogweb`, told apart by SNI — see
+[deploy/CLOUDFLARE.md](deploy/CLOUDFLARE.md).
 
-`/healthz` says which one actually answered. The version is baked into each
-image, so it reports the container's own identity rather than a config value:
+`/healthz` says which build answered. The version is baked into the image, so it
+reports the container's own identity rather than a config value:
 
 ```console
 $ curl -s https://ratehubfx.com/healthz
@@ -346,12 +333,10 @@ $ curl -s https://ratehubfx.com/healthz
 
 | Field     | Meaning                                                    |
 | :-------- | :--------------------------------------------------------- |
-| `version` | `1` = the Flask app, `2` = the Astro app                    |
+| `version` | `2`; `1` was the Flask app this replaced                     |
 | `stack`   | the same answer in words                                    |
 | `build`   | git short SHA the image was built from                      |
 | `color`   | which half of the blue/green pair this container is         |
-
-`ok` and `service` are unchanged, so anything already polling them still works.
 
 Example `PROD_ENV`:
 

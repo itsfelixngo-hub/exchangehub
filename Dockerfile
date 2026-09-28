@@ -21,9 +21,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Which build is answering /healthz. Baked in here rather than read from .env
-# because both stacks share one .env file: a value set there would report the
-# same number whichever container actually served the request.
-#   1 = the Flask app in the repo root, 2 = this one.
+# because the fetcher image reads the same .env file: a value set there would
+# report the same number whichever container answered.
+#   1 was the Flask app this replaced, 2 is this one.
 ARG APP_VERSION=2
 ARG APP_BUILD=unknown
 ENV APP_VERSION=$APP_VERSION

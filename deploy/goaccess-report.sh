@@ -22,7 +22,8 @@ command -v goaccess >/dev/null || {
 }
 [ -r "$LOG" ] || { echo "cannot read $LOG (run with sudo?)" >&2; exit 1; }
 
-# Matches log_format ratehubfx in deploy/nginx-exchangehub.conf: goaccess's
+# Matches log_format ratehubfx_astro in deploy/nginx-exchangehub-astro.conf:
+# goaccess's
 # COMBINED spec plus the three key=value extras we append. %T picks up rt,
 # which is what makes the response-time panels work.
 LOG_FORMAT='%h %^[%d:%t %^] "%r" %s %b "%R" "%u" host=%^ rt=%T urt=%^'

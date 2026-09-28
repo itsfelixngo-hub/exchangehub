@@ -1,16 +1,18 @@
 name: Deploy
 
-# This file exists on the `astro` branch and deploys the Astro app. The copy on
-# `main` is untouched and deploys the Flask app. The branch is the switch:
-# whichever one you push (or dispatch) last is what production runs, because
-# both reset the same APP_DIR checkout and both write the same nginx upstream.
+# Deploys the Astro site from `main`, which is the only deploy branch. It used
+# to be one of two: `main` carried the Flask app and `astro` carried this
+# workflow, and pushing a branch was how you chose which one production served.
+# The cutover is done — main was fast-forwarded onto the Astro tree and the
+# Flask app deleted, so there is nothing left to switch between. The Flask
+# rollback is the `flask-final` tag, not a branch.
 #
-# The concurrency group below is shared with main's workflow on purpose, so a
-# push to each branch at the same time cannot have the two deploys interleave.
+# The concurrency group keeps two deploys from interleaving over the one
+# APP_DIR checkout they share.
 on:
   push:
     branches:
-      - astro
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -38,8 +40,8 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      # The Flask web app is gone from this branch; what is left of the Python
-      # is the rate fetcher, so that is what gets checked.
+      # The rate fetcher is all the Python there is, so that is what gets
+      # checked — even though a deploy does not rebuild it by default.
       - name: Compile Python sources
         run: python -m compileall -q .
 
@@ -88,39 +90,38 @@ jobs:
         env:
           APP_NAME: ${{ secrets.APP_NAME || 'exchangehub' }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/deploy/apps/exchangehub' }}
-          # The Astro site's own ports and its own upstream file — separate
-          # from the Flask app's 5001/5002 so both stacks can run at once and
-          # switching is a vhost swap rather than a redeploy.
+          # 5003/5004 rather than 5001/5002: the ports were picked so the Astro
+          # stack could run beside the Flask one during the cutover. Nothing
+          # holds the old pair now, but renumbering would mean editing the
+          # vhost, the upstream file and the secrets for no gain.
           ASTRO_BLUE_PORT: ${{ secrets.ASTRO_BLUE_PORT || '5003' }}
           ASTRO_GREEN_PORT: ${{ secrets.ASTRO_GREEN_PORT || '5004' }}
           NGINX_UPSTREAM_CONF: ${{ secrets.NGINX_ASTRO_UPSTREAM_CONF || '/etc/nginx/conf.d/exchangehub-astro-upstream.conf' }}
-          # One secret for both stacks — the Astro app reads this same .env
-          # (src/lib/env.ts reads the repo-root file), so nothing
-          # new has to be stored for the cutover.
+          # The whole production .env, which the app reads from the repo root
+          # (src/lib/env.ts). The fetcher reads the same file.
           PROD_ENV: ${{ secrets.PROD_ENV }}
           GITHUB_TOKEN: ${{ github.token }}
           SKIP_GIT_FETCH: 'true'
-          # The branch this workflow file lives on, and therefore the code the
-          # runner checks out. There is no WEB_STACK switch: pushing or
-          # dispatching `main` runs main's own workflow and puts the Flask app
-          # back, which is the rollback.
-          DEPLOY_BRANCH: astro
+          # The code the runner checks out. Only `main` now — see the header.
+          DEPLOY_BRANCH: main
           # Set the repository variable SWITCH_NGINX to 'false' to stage the
           # Astro container on the idle port without moving traffic onto it.
-          # Use it for the first cutover: /healthz reads no rate data, so only
-          # a real page request proves the container can reach R2. Verify, then
+          # Worth it for a risky change: /healthz reads no rate data, so only a
+          # real page request proves the container can reach R2. Verify, then
           # set it back to 'true' (or delete the variable) and re-run Deploy.
           SWITCH_NGINX: ${{ vars.SWITCH_NGINX || 'true' }}
-          # The mailserver and the fetcher are shared by both stacks — one
-          # container name each, whichever deploy ran last owns it. During the
-          # cutover main still deploys them, and recreating them from here
-          # would restart the fetcher and interrupt mail for no reason: this
-          # branch changes only the web tier. So it defaults to off.
+          # Off, so an ordinary deploy replaces the web tier and nothing else.
+          # The fetcher and the mailserver are one long-lived container each,
+          # and deploy_fetcher_mail.sh recreates rather than reloads them:
+          # restarting the fetcher costs an extra OpenExchangeRates call,
+          # because fetch_entrypoint.sh fetches immediately and only then
+          # sleeps. Mail would drop connections for the same nothing.
           #
-          # Set the repository variable DEPLOY_FETCHER_MAIL to 'true' once main
-          # is retired — after that nothing else deploys them, and leaving this
-          # off means the fetcher keeps running forever on whatever image main
-          # last built.
+          # Nothing else deploys them any more, so the fetcher keeps running on
+          # the image it was last built from — including across this cutover,
+          # which is deliberate. To pick up a change to fetch_rates.py, set the
+          # repository variable DEPLOY_FETCHER_MAIL to 'true' for one run and
+          # then set it back.
           DEPLOY_FETCHER_MAIL: ${{ vars.DEPLOY_FETCHER_MAIL || 'false' }}
         run: |
           set -euo pipefail
@@ -129,9 +130,11 @@ jobs:
           test -n "$GITHUB_TOKEN"
           test -n "$GITHUB_REPOSITORY"
           GIT_AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          # APP_DIR is one checkout shared with main's workflow, so this resets
-          # it onto the Astro branch. Deploying main later resets it back —
-          # that is exactly how the rollback works.
+          # APP_DIR is a long-lived checkout, so it is reset rather than cloned.
+          # Safe for the fetcher and the mailserver: neither bind-mounts it.
+          # The fetcher's code lives in its image and only .deploy-state (the
+          # OpenExchangeRates quota state) and docker-data/ are mounted, both
+          # gitignored and therefore untracked — a reset never touches them.
           git -c http.extraheader="AUTHORIZATION: basic $GIT_AUTH" \
             fetch --force "https://github.com/${GITHUB_REPOSITORY}.git" \
             "${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}"
@@ -147,26 +150,25 @@ jobs:
           export SWITCH_NGINX
 
           # Mailserver and the single fetcher container. Neither is the
-          # website, and neither touches the blue/green ports.
+          # website, and neither touches the blue/green ports. Off by default,
+          # so the usual run only prints what is already up.
           if [ "$DEPLOY_FETCHER_MAIL" = "true" ]; then
             scripts/deploy_fetcher_mail.sh
           else
             echo "Skipping the mailserver and fetcher (DEPLOY_FETCHER_MAIL is not 'true')."
-            echo "They keep running as main's deploy left them; this deploy only replaces the web tier."
+            echo "They keep running untouched; this deploy only replaces the web tier."
             docker ps --filter "name=${APP_NAME}-fetcher" --filter "name=${APP_NAME}-mailserver" \
               --format '  {{.Names}}\t{{.Image}}\t{{.Status}}' || true
           fi
 
-          # Then the web tier: build, health-check and warm the new Astro
-          # container, switch nginx onto it, and only then remove the old Astro
-          # container and any Flask web container it supersedes.
+          # Then the web tier: build, health-check and warm the new container,
+          # switch nginx onto it, and only then remove the one it replaces.
           scripts/deploy_astro.sh
 
-          # What this deploy put on the Astro ports. It does NOT prove the
-          # site is serving it: which stack visitors reach is decided by which
-          # vhost is enabled in /etc/nginx/sites-enabled, and that is a manual
-          # symlink swap (see deploy/nginx-exchangehub-astro.conf). Deploying
-          # never takes traffic away from the old site on its own.
+          # What this deploy put on the ports, and which vhost is enabled. The
+          # vhost is still a file on the server copied by hand from
+          # deploy/nginx-exchangehub-astro.conf, so a change to that file in the
+          # repo does not reach production until someone copies it.
           astro_color="$(cat .deploy-active-color-astro 2>/dev/null || echo blue)"
           if [ "$astro_color" = "blue" ]; then
             astro_port="$ASTRO_BLUE_PORT"
@@ -176,5 +178,5 @@ jobs:
           echo "Astro is on ${astro_color} (127.0.0.1:${astro_port}):"
           curl -fsS "http://127.0.0.1:${astro_port}/healthz"
           echo
-          echo "Whether visitors see it depends on the enabled nginx vhost:"
+          echo "The enabled nginx vhost:"
           ls -l /etc/nginx/sites-enabled/ | grep -i exchangehub || true
