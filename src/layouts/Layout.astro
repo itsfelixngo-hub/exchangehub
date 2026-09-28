@@ -1,5 +1,5 @@
 ---
-import { siteOrigin, SITE_NAME, SITE_ALTERNATE_NAME } from "../lib/site";
+import { siteOrigin, SITE_NAME, SITE_ALTERNATE_NAME, ICON_VERSION } from "../lib/site";
 import { resolveVisitorLocale } from "../lib/geo";
 import "../styles/fonts.css";
 import "../styles/components.css";
@@ -116,11 +116,13 @@ const schema = {
     />
     <link rel="canonical" href={canonicalUrl} />
     <!-- Generated from the site logo (public/ratehub-2b-icon.png), cropped to
-         the "fx" mark — the bars beside it turn to mush at 16px. -->
-    <link rel="icon" href="/favicon.ico" sizes="32x32" />
-    <link rel="icon" type="image/png" href="/favicon-32.png" sizes="32x32" />
-    <link rel="icon" type="image/png" href="/favicon-192.png" sizes="192x192" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+         the "fx" mark — the bars beside it turn to mush at 16px. The ?v is
+         ICON_VERSION in src/lib/site.ts: the names are fixed, so bumping it is
+         the only way to get a new icon past a browser that holds the old one.-->
+    <link rel="icon" href={`/favicon.ico?v=${ICON_VERSION}`} sizes="32x32" />
+    <link rel="icon" type="image/png" href={`/favicon-32.png?v=${ICON_VERSION}`} sizes="32x32" />
+    <link rel="icon" type="image/png" href={`/favicon-192.png?v=${ICON_VERSION}`} sizes="192x192" />
+    <link rel="apple-touch-icon" href={`/apple-touch-icon.png?v=${ICON_VERSION}`} />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={SITE_NAME} />
     <meta property="og:title" content={title} />

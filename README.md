@@ -92,7 +92,11 @@ every request the container serves.
 - Chart payloads are downsampled to `CHART_MAX_POINTS` / `PAIR_CHART_MAX_POINTS`.
 - gzip and `Cache-Control` are nginx's job here, not the app's — see
   `deploy/nginx-exchangehub-astro.conf`, which also caches `/_astro/` and the
-  flag images for a year.
+  flag images for a year. The favicon set is the exception at a week: its
+  names are fixed, so a year would strand a returning visitor on the old icon.
+  When you change one, bump `ICON_VERSION` in `src/lib/site.ts` — it is the
+  `?v=` on the `<link rel="icon">` hrefs, and it is what makes the new icon
+  appear immediately rather than whenever the week runs out.
 
 Tuning environment variables:
 

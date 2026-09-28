@@ -20,6 +20,17 @@ export const SITE_NAME = "ExchangeHub";
 /** The domain reads as a second brand, so it is declared as the same one. */
 export const SITE_ALTERNATE_NAME = "RateHubFX";
 
+/**
+ * Cache-buster on the <link rel="icon"> hrefs — bump it whenever a file in the
+ * favicon set changes. The names are fixed (browsers and crawlers probe
+ * /favicon.ico by path, so it cannot be content-hashed like /_astro/), and a
+ * favicon a browser has already cached is one of the stickiest things on the
+ * web. nginx serves these with a week's max-age rather than a year so the
+ * copies fetched without a link tag also expire, but this is what makes the
+ * change immediate for a visitor who has the old one.
+ */
+export const ICON_VERSION = "2";
+
 export function siteOrigin(request: Request, url: URL): string {
   if (CONFIGURED) return CONFIGURED;
   const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();

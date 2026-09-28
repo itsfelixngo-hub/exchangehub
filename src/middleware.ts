@@ -44,14 +44,19 @@ const PAIR_SEGMENT = /^([A-Za-z]{3})[-_]([A-Za-z]{3})$/;
 // The image rule is a safety net, not the main mechanism: files in public/ are
 // served by the Node adapter's own static handler, which runs before any of
 // this and stamps `max-age=0` on everything outside /_astro/. Correcting that
-// is nginx's job (see the location blocks in deploy/nginx-exchangehub.conf);
+// is nginx's job (see the location blocks in deploy/nginx-exchangehub-astro.conf);
 // this line only covers an image that is ever served by a route instead.
 const STATIC_ASSET = /\.(svg|png|ico|jpg|jpeg|webp|avif|woff2?)$/i;
+// The favicon set is carved out of the year above: its names are fixed, so a
+// browser holding an old copy has nothing to tell it a new one exists. Mirrors
+// the nginx location that does the real work.
+const ICON_ASSET = /^\/(favicon|apple-touch-icon)[^/]*\.(png|ico)$/i;
 
 function staticCachePolicy(pathname: string): string | null {
   if (pathname.startsWith("/api/")) return "public, max-age=60, stale-while-revalidate=300";
   // The index and every section under it (/sitemap-pairs-vnd.xml and friends).
   if (/^\/sitemap(-[a-z-]+)?\.xml$/.test(pathname) || pathname === "/robots.txt") return "public, max-age=3600";
+  if (ICON_ASSET.test(pathname)) return "public, max-age=604800";
   if (STATIC_ASSET.test(pathname)) return "public, max-age=31536000, immutable";
   return null;
 }
