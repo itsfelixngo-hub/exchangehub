@@ -32,7 +32,8 @@ request whose SNI matches neither lands there.
 | Certificates | `/etc/ssl/cloudflare/` |
 
 Only the upstream file is automatic. Pushing to `main` never updates the site
-config; `deploy_astro.sh` writes the upstream and reloads nginx, nothing more.
+config; `write_upstream.sh` writes the upstream and the caller reloads nginx,
+nothing more.
 
 ---
 
