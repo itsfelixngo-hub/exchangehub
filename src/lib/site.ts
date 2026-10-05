@@ -15,6 +15,14 @@ import "./env";
 // Node server is bound to localhost where nothing else can reach it.
 const CONFIGURED = (process.env.SITE_URL ?? process.env.PUBLIC_SITE_URL ?? "").trim().replace(/\/+$/, "");
 
+/**
+ * AdSense publisher id ("ca-pub-…"), read at request time from ADSENSE_CLIENT
+ * in the PROD_ENV secret so it can be changed without a code edit. Unset or
+ * malformed → no ad script and an empty ads.txt.
+ */
+const ADSENSE_RAW = (process.env.ADSENSE_CLIENT ?? "").trim();
+export const ADSENSE_CLIENT = /^ca-pub-\d+$/.test(ADSENSE_RAW) ? ADSENSE_RAW : "";
+
 /** The brand as the page copy writes it — header, footer, every info page. */
 export const SITE_NAME = "ExchangeHub";
 /** The domain reads as a second brand, so it is declared as the same one. */

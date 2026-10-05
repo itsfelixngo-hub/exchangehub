@@ -1,5 +1,5 @@
 ---
-import { siteOrigin, SITE_NAME, SITE_ALTERNATE_NAME, ICON_VERSION } from "../lib/site";
+import { siteOrigin, SITE_NAME, SITE_ALTERNATE_NAME, ICON_VERSION, ADSENSE_CLIENT } from "../lib/site";
 import { resolveVisitorLocale } from "../lib/geo";
 import "../styles/fonts.css";
 import "../styles/components.css";
@@ -172,6 +172,10 @@ const schema = {
       />
     )}
     <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+    {ADSENSE_CLIENT && (
+      <script is:inline async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+       crossorigin="anonymous"></script>
+    )}
     <style is:global>
       * { box-sizing: border-box; }
       body { margin: 0; font-family: 'Manrope', Arial, sans-serif; }
