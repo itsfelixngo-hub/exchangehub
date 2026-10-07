@@ -156,14 +156,25 @@ const navLinks: { label: string; href: string }[] = [
      none of it fits this design, and the banner iframe shoves the whole
      page down when it appears. Our own header dropdown is the only UI for
      switching language, so suppress all of Google's chrome and the layout
-     shift it causes. */
-  .goog-te-banner-frame, .goog-te-balloon-frame, #goog-gt-tt {
+     shift it causes. The goog-te-* names are the widget's old markup; current
+     versions use obfuscated VIpgJd-* classes and mount the banner as a
+     top-level `body > .skiptranslate` div, so both sets are listed. Only the
+     banner is hidden — the gadget inside #google_translate_element is also
+     .skiptranslate but is not a direct child of body, so the combo our
+     dropdown drives keeps working. */
+  .goog-te-banner-frame, .goog-te-balloon-frame, #goog-gt-tt,
+  body > .skiptranslate, iframe.skiptranslate,
+  .VIpgJd-ZVi9od-ORHb-OEVmcd, .VIpgJd-ZVi9od-aZ2wEe-wOHMyf,
+  .VIpgJd-yAWNEb-L7lbkb, .VIpgJd-ZVi9od-l4eHX-hSRGPd {
     display: none !important;
   }
-  body {
+  html, body {
     top: 0px !important;
   }
-  .goog-text-highlight {
+  body {
+    position: static !important;
+  }
+  .goog-text-highlight, .VIpgJd-yAWNEb-VIpgJd-fmcmS-sn54Q {
     background: none !important;
     box-shadow: none !important;
   }
