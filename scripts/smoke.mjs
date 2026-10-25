@@ -132,43 +132,91 @@ try {
   const html = await home.text();
   check("canonical is absolute https", html.includes(`<link rel="canonical" href="${SITE}/">`));
   check("og:url matches canonical", html.includes(`content="${SITE}/"`));
-  // /sitemap.xml is an index; the pages themselves live in the sections it
-  // names. The hierarchy is the point, so both levels are asserted.
+  // One flat urlset: home, the five info pages, the 15 canonical core pairs.
+  // See src/lib/sitemap.ts; scripts/check-sitemap.mjs asserts the same at build.
   const sitemap = await (await fetch(`${BASE}/sitemap.xml`)).text();
-  check("sitemap.xml is an index", sitemap.includes("<sitemapindex"));
-  check("index names the pages section", sitemap.includes(`<loc>${SITE}/sitemap-pages.xml</loc>`));
-  check("index names the currencies section", sitemap.includes(`<loc>${SITE}/sitemap-currencies.xml</loc>`));
-  check("index names the pairs section", sitemap.includes(`<loc>${SITE}/sitemap-pairs.xml</loc>`));
-  // Three sections, not one per currency — see the note in src/lib/sitemap.ts.
-  check("index stays at three sections", (sitemap.match(/<sitemap>/g) ?? []).length === 3);
-
-  const pagesSection = await (await fetch(`${BASE}/sitemap-pages.xml`)).text();
-  check("pages section uses the site origin", pagesSection.includes(`<loc>${SITE}/</loc>`));
-
-  const currenciesSection = await (await fetch(`${BASE}/sitemap-currencies.xml`)).text();
-  check("currencies section lists the hubs", currenciesSection.includes(`<loc>${SITE}/vnd</loc>`));
-  check("pages section lists the analysis index", pagesSection.includes(`<loc>${SITE}/analysis</loc>`));
+  const locs = (sitemap.match(/<loc>[^<]+<\/loc>/g) ?? []).map((loc) => loc.slice(5, -6).slice(SITE.length));
+  check("sitemap.xml is a urlset", sitemap.includes("<urlset"));
+  check("sitemap holds 21 URLs", locs.length === 21, String(locs.length));
+  check("sitemap holds no duplicates", locs.length === new Set(locs).size);
+  for (const path of ["/", "/about", "/contact", "/privacy-policy", "/terms", "/disclaimer", "/usd-vnd", "/eur-usd", "/cny-jpy"]) {
+    check(`sitemap lists ${path}`, locs.includes(path));
+  }
+  // A reverse direction, a non-core pair, a hub, and the other tool pages:
+  // all still answer, none are submitted.
+  for (const path of ["/vnd-usd", "/usd-eur", "/usd-myr", "/vnd", "/analysis", "/chart"]) {
+    check(`sitemap leaves out ${path}`, !locs.includes(path));
+  }
+  const oldSection = await fetch(`${BASE}/sitemap-pairs.xml`);
+  check("the old sitemap sections are gone", oldSection.status === 404, `got ${oldSection.status}`);
 
   // The analysis index is the header's Analysis tab and a second way into the
   // hubs, so it has to keep linking to them.
   const analysis = await (await fetch(`${BASE}/analysis`)).text();
   check("analysis links to the currency hubs", analysis.includes('href="/vnd"') && analysis.includes('href="/usd"'));
 
-  const pairsSection = await (await fetch(`${BASE}/sitemap-pairs.xml`)).text();
-  check("pairs section lists a stored pair", pairsSection.includes(`<loc>${SITE}/usd-vnd</loc>`));
-  check("pairs section lists a derived pair", pairsSection.includes(`<loc>${SITE}/vnd-eur</loc>`));
-  // A stored pair answers in both directions, so both belong here. Google was
-  // already ranking /usd-myr while it appeared in no sitemap.
-  check("pairs section lists a stored pair reversed", pairsSection.includes(`<loc>${SITE}/usd-myr</loc>`));
-  check("pairs section holds no duplicates", (() => {
-    const locs = pairsSection.match(/<loc>[^<]+<\/loc>/g) ?? [];
-    return locs.length === new Set(locs).size;
-  })());
-
-  const missingSection = await fetch(`${BASE}/sitemap-nope.xml`);
-  check("unknown sitemap section 404s", missingSection.status === 404, `got ${missingSection.status}`);
   const robots = await (await fetch(`${BASE}/robots.txt`)).text();
   check("robots points at the sitemap", robots.includes(`Sitemap: ${SITE}/sitemap.xml`));
+  // Noindex only works if the crawler may fetch the page to read it.
+  check("robots blocks nothing at the root", !/^Disallow:\s*\/\s*$/m.test(robots));
+  check("robots singles out no Google crawler", !/Googlebot|Mediapartners-Google|AdsBot-Google/i.test(robots));
+
+  console.log("indexing follows the core pairs");
+  const robotsMeta = (page) => page.match(/<meta name="robots" content="([^"]*)"/)?.[1] ?? "";
+  const canonicalOf = (page) => page.match(/<link rel="canonical" href="([^"]*)"/)?.[1] ?? "";
+  for (const [route, indexable, canonical] of [
+    // A core pair in its canonical direction.
+    ["/usd-vnd", true, "/usd-vnd"],
+    ["/eur-usd", true, "/eur-usd"],
+    // Its reverse: canonical to the direction above, and no noindex.
+    ["/vnd-usd", true, "/usd-vnd"],
+    ["/usd-eur", true, "/eur-usd"],
+    ["/vnd-eur", true, "/eur-vnd"],
+    // Outside the core: noindex, its own canonical.
+    ["/usd-myr", false, "/usd-myr"],
+    ["/brl-dkk", false, "/brl-dkk"],
+  ]) {
+    const res = await fetch(`${BASE}${route}`);
+    const page = await res.text();
+    check(`${route} still answers`, res.status === 200, `got ${res.status}`);
+    const meta = robotsMeta(page);
+    check(
+      `${route} is ${indexable ? "indexable" : "noindex,follow"}`,
+      indexable ? meta.startsWith("index,follow") : meta === "noindex,follow",
+      meta,
+    );
+    check(`${route} canonical is ${canonical}`, canonicalOf(page) === `${SITE}${canonical}`, canonicalOf(page));
+  }
+
+  console.log("canonical pair pages carry the written sections");
+  {
+    const page = await (await fetch(`${BASE}/usd-vnd`)).text();
+    const forward = page.match(/data-table-body="forward"[\s\S]*?<\/table>/)?.[0] ?? "";
+    const amounts = [...forward.matchAll(/data-amount="(\d+)"/g)].map((m) => Number(m[1]));
+    check("/usd-vnd converts 1…1000", amounts.join(",") === "1,5,10,50,100,500,1000", amounts.join(","));
+    check("/usd-vnd has a 7-day summary", /id="pair-summary"[^>]*>[^<]{40,}/.test(page));
+    check("/usd-vnd never says 30 days", !/30[ -]days?/i.test(page));
+    check("/usd-vnd names its data source", page.includes("Open Exchange Rates"));
+    check("/usd-vnd has a last-updated time", /Last updated <time datetime="/.test(page));
+    // Only the related block: the footer links /vnd-usd on every page.
+    const relatedBlock = page.match(/id="related-pairs"[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? "";
+    const related = [...relatedBlock.matchAll(/href="\/([a-z]{3}-[a-z]{3})"/g)].map((m) => m[1]);
+    const canonicalPairs = new Set(["eur-usd", "gbp-usd", "usd-jpy", "usd-cny", "usd-vnd", "eur-vnd", "gbp-vnd", "jpy-vnd",
+      "cny-vnd", "eur-gbp", "eur-jpy", "eur-cny", "gbp-jpy", "gbp-cny", "cny-jpy"]);
+    check("/usd-vnd links only canonical related pairs",
+      related.length > 0 && related.every((pair) => canonicalPairs.has(pair) && pair !== "usd-vnd"), related.join(","));
+    const other = await (await fetch(`${BASE}/usd-myr`)).text();
+    check("/usd-myr keeps the long-tail layout", !other.includes('id="pair-summary"'));
+  }
+
+  console.log("www goes to the canonical host in one hop");
+  {
+    const res = await fetch(`${BASE}/EUR_USD/?x=1`, { redirect: "manual", headers: { "x-forwarded-host": "www.smoke.example" } });
+    const location = res.headers.get("location") ?? "";
+    check("www -> SITE_URL with the path normalised", res.status === 301 && location === `${SITE}/eur-usd?x=1`, `got ${res.status} ${location}`);
+    const apex = await fetch(`${BASE}/eur-usd`, { redirect: "manual", headers: { "x-forwarded-host": "smoke.example" } });
+    check("the canonical host is not redirected", apex.status === 200, `got ${apex.status}`);
+  }
 
   console.log("canonical redirects");
   for (const [from, to] of [

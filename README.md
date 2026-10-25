@@ -57,13 +57,13 @@ Routes the site serves
 | `/api/rates?quote=VND` | rate-board rows for one quote currency |
 | `/api/hero?base=USD&target=VND` | hero chart series for one pair |
 | `/healthz` | liveness plus which build answered; reads no rate data |
-| `/robots.txt` | points at the sitemap index |
-| `/sitemap.xml` | index over `/sitemap-pages.xml`, `/sitemap-currencies.xml` and `/sitemap-pairs.xml` |
+| `/robots.txt` | points at the sitemap |
+| `/sitemap.xml` | home, the five info pages and the 15 canonical core pairs — nothing else |
 
 `/vnd` and `/vnd-usd` sit in the same URL segment, so one dynamic route
 (`src/pages/[slug].astro`) serves both and tells them apart by shape. The URLs
 stay flat on purpose — the hierarchy is expressed by the breadcrumbs and the
-sitemap index, not by nesting `/vnd/usd`.
+links between pages, not by nesting `/vnd/usd`.
 
 Wrong or unknown pairs 404; `/eur-usd/`, `/EUR-USD`, `/eur_usd` and
 `/exchange/eur-usd` all redirect to `/eur-usd`, so one page has one URL.
@@ -106,7 +106,6 @@ Tuning environment variables:
 | `PAIR_CONCURRENCY` | `6` | Pair histories loaded at once |
 | `CHART_MAX_POINTS` | `400` | Points kept per home-page chart series |
 | `PAIR_CHART_MAX_POINTS` | `600` | Points kept per pair-page series |
-| `NOINDEX_LONGTAIL_PAIRS` | unset | Keep non-menu pairs out of the index — see "Ad network review" |
 | `SITE_URL` | unset | Origin for canonical, og:url and sitemap; set by the deploy script |
 
 Notes
@@ -404,7 +403,7 @@ R2_READ_CACHE_SECONDS=300
 SITE_URL=https://ratehubfx.com
 CONTACT_SECRET=GENERATE_A_LONG_RANDOM_SECRET
 SITE_CONTACT_EMAIL=contact@ratehubfx.com
-CONTACT_FORWARD_TO=test.noreply909@gmail.com
+CONTACT_FORWARD_TO=YOUR_PRIVATE_INBOX
 CONTACT_FROM_EMAIL=contact@ratehubfx.com
 CONTACT_SMTP_HOST=exchangehub-mailserver
 CONTACT_SMTP_PORT=587
@@ -432,7 +431,7 @@ Built-in mailserver setup:
 - Point `mail.ratehubfx.com` A record to the VPS IP.
 - Point `ratehubfx.com` MX record to `mail.ratehubfx.com`.
 - Add SPF TXT on `ratehubfx.com`, for example `v=spf1 mx -all`.
-- Add DMARC TXT, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"`.
+- Add DMARC TXT, for example `_dmarc.ratehubfx.com TXT "v=DMARC1; p=quarantine"` (add `rua=mailto:…` only for an address you are happy to publish in DNS).
 - Open inbound ports `25`, `465`, `587`, `143`, and `993` on the VPS firewall and cloud firewall. Inbound `25` is required for receiving mail from other mail servers.
 - Many VPS providers block outbound TCP/25, which causes logs like `connect to gmail-smtp-in.l.google.com[...]25: Connection timed out`. In that case, set an authenticated SMTP relay on port `587` with `MAIL_DEFAULT_RELAY_HOST`, `MAIL_RELAY_USER`, and `MAIL_RELAY_PASSWORD`.
 - After deploy, confirm the relay was applied:
@@ -623,13 +622,16 @@ and the contact form's anti-automation cookie, none of which are currently
 gated behind consent. Google's own CMP is configured in the AdSense interface
 and needs no code here; a third-party CMP would.
 
-**The long-tail pair pages.** `NOINDEX_LONGTAIL_PAIRS=true` marks every pair
-outside the header menu `noindex` and drops it from `sitemap.xml`, leaving the
-38 curated pairs — see `pairIsNoindex` in `src/lib/config.ts`. The pages it
-hides are one template with the currency names swapped, which is what a
-reviewer reads as scaled content. They stay reachable and keep working for
-visitors; they simply stop being submitted for indexing. Turn the variable off
-again once those pairs carry writing of their own.
+**Which pair pages are indexed.** Only pairs between the six
+`INDEXABLE_CURRENCIES` in `src/lib/config.ts` (USD, EUR, GBP, JPY, VND, CNY),
+and only in the direction listed in `CANONICAL_PAIRS` — 15 pages. Those are
+the only pairs in `sitemap.xml`. The reverse direction (`/vnd-usd`) is left
+indexable with its canonical pointing at `/usd-vnd` (canonical alone, no
+noindex — the pair sends Google mixed signals); every other pair is
+`noindex,follow` and its own canonical. All of them keep working for
+visitors, and robots.txt must never block them, or crawlers cannot read the
+noindex. `npm run build` runs `scripts/check-sitemap.mjs` first and fails if
+the sitemap would hold anything else.
 
 `ads.txt` is deliberately absent. A file listing no authorised sellers is
 worse than no file at all — buyers read it as "nobody may sell this

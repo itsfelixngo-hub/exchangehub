@@ -8,14 +8,21 @@ import Footer from "./Footer.astro";
 import BackToTop from "./BackToTop.astro";
 import { buildMenuModel } from "../lib/menu";
 import { buildPairMovers } from "../lib/home";
-import { CURRENCY_PROFILES, configCurrencies, currencyProfile, currencyUrl, pairIsNoindex, pairUrl } from "../lib/config";
+import {
+  CURRENCY_PROFILES, canonicalPair, configCurrencies, currencyProfile, currencyUrl, pairIsIndexable, pairIsNoindex,
+  pairUrl, relatedCanonicalPairs,
+} from "../lib/config";
 import { formatRate } from "../lib/format";
 import { flagSrc, SWAP_ICON, CHEVRON_DOWN } from "../lib/flags";
 import { resolveVisitorLocale } from "../lib/geo";
 import { siteOrigin } from "../lib/site";
 import {
-  buildPairContent, buildPairModel, chartSeries, conversionRows, rangeOptions,
+  CANONICAL_AMOUNTS, buildPairContent, buildPairModel, chartSeries, conversionRows, rangeOptions,
 } from "../lib/pair";
+import {
+  DATA_SOURCE, WINDOW_DAYS, buildFaqs, buildSummary, legMoves, methodNote, proseRate, windowStats,
+} from "../lib/pair-insight";
+import { pairContext } from "../lib/pair-context";
 
 interface Props {
   base: string;
@@ -47,22 +54,51 @@ const updatedIso = model.latest ? new Date(model.latest.ts * 1000).toISOString()
 const changeLabel = stats ? `${stats.changePct >= 0 ? "+" : ""}${stats.changePct.toFixed(2)}%` : "—";
 const changeColor = stats?.direction === "up" ? "#16a34a" : stats?.direction === "down" ? "#e11d3f" : "#8b857f";
 
-const forwardRows = conversionRows(model.amounts, base, target, rate);
+// Only the 15 core pairs, in their market direction, are indexable and carry
+// the written sections below. The reverse of one (/vnd-usd) points its
+// canonical at that direction; any other pair is noindex,follow and its own
+// canonical.
+const isCanonical = pairIsIndexable(base, target);
+const canonical = canonicalPair(base, target);
+const canonicalPath = canonical ? pairUrl(canonical[0], canonical[1]) : undefined;
+const noindex = pairIsNoindex(base, target);
+
+// The canonical pages convert a fixed 1…1000 ladder; the rest keep the ladder
+// sized to the base currency (1 VND is not a row anyone reads).
+const forwardRows = conversionRows(isCanonical ? CANONICAL_AMOUNTS : model.amounts, base, target, rate);
 const reverseRows = conversionRows(model.amounts, target, base, reverseRate);
+const forwardAmounts = isCanonical ? CANONICAL_AMOUNTS : model.amounts;
 
 const baseProfile = currencyProfile(base);
 const targetProfile = currencyProfile(target);
 
-const title = `${base} to ${target} Exchange Rate Today`;
-const description = `${base} to ${target} exchange rate today with converter, chart, statistics, trend notes, and practical ${base}/${target} context.`
-  + (rate === null ? "" : ` Latest: 1 ${base} = ${rateLabel} ${target}.`);
+// The 7-day picture, written from the stored rates. Canonical pages only:
+// they are the ones submitted for indexing, and the cross-currency legs cost
+// two more history reads.
+const week = isCanonical ? windowStats(model.history) : null;
+const legs = isCanonical ? await legMoves(base, target) : null;
+const summary = isCanonical ? buildSummary(base, target, week, legs) : "";
+const faqs = isCanonical ? buildFaqs(base, target, week, legs) : content.faqs;
+const background = isCanonical ? pairContext(base, target) : null;
+const related = isCanonical ? relatedCanonicalPairs(base, target) : [];
+const weekChange = week ? `${week.changePct >= 0 ? "+" : "−"}${Math.abs(week.changePct).toFixed(2)}%` : "—";
+
+const title = isCanonical
+  ? `${base} to ${target} Rate Today: Live Rate, ${WINDOW_DAYS}-Day History`
+  : `${base} to ${target} Exchange Rate Today`;
+const description = isCanonical
+  ? (rate === null || !week
+    ? `Live ${base} to ${target} exchange rate with a converter, ${WINDOW_DAYS}-day chart and statistics, and answers to common ${base}/${target} questions.`
+    : `1 ${base} = ${proseRate(rate)} ${target}. Over the last ${WINDOW_DAYS} days ${base}/${target} moved ${weekChange}, between ${proseRate(week.low)} and ${proseRate(week.high)}. Converter, chart and FAQ.`)
+  : `${base} to ${target} exchange rate today with converter, chart, statistics, trend notes, and practical ${base}/${target} context.`
+    + (rate === null ? "" : ` Latest: 1 ${base} = ${rateLabel} ${target}.`);
 
 const canonicalUrl = siteOrigin(Astro.request, Astro.url) + pairUrl(base, target);
 const extraSchemaNodes = [
   {
     "@type": "FAQPage",
     "@id": `${canonicalUrl}#faq`,
-    mainEntity: content.faqs.map((item) => ({
+    mainEntity: faqs.map((item) => ({
       "@type": "Question",
       name: item.question,
       acceptedAnswer: { "@type": "Answer", text: item.answer },
@@ -100,7 +136,8 @@ const TOOL_TABS = [
   breadcrumbName={`${base} to ${target}`}
   breadcrumbParent={{ name: `${base} rates`, path: currencyUrl(base) }}
   extraSchemaNodes={extraSchemaNodes}
-  noindex={pairIsNoindex(base, target)}
+  noindex={noindex}
+  canonicalPath={canonicalPath}
 >
   <div>
     <Header pairMovers={pairMovers} active="Charts" autoLang={locale.lang} />
@@ -255,7 +292,9 @@ const TOOL_TABS = [
                 <div id="chart-dot" style="position:absolute; display:none; width:9px; height:9px; margin:-4.5px 0 0 -4.5px; border-radius:50%; background:#e11d3f; box-shadow:0 0 0 3px rgba(225,29,63,0.18); pointer-events:none;"></div>
                 <div id="chart-tip" translate="no" style="position:absolute; display:none; transform:translate(-50%,-100%); margin-top:-14px; white-space:nowrap; background:#14100f; color:#fff; font-size:12px; line-height:1.4; padding:7px 10px; border-radius:8px; pointer-events:none; z-index:5;"></div>
               </div>
-              <div id="chart-x" translate="no" style="display:flex; justify-content:space-between; padding-right:66px; margin-top:8px; font-size:12px; color:#8b857f;"></div>
+              {/* Filled by the script; min-height holds its line open so the
+                  brush and the cards below do not jump down when it lands. */}
+              <div id="chart-x" translate="no" style="display:flex; justify-content:space-between; padding-right:66px; margin-top:8px; min-height:18px; font-size:12px; line-height:18px; color:#8b857f;"></div>
 
               <div class="pair-brush" style="height:56px; border-radius:10px; background:#fdecee; position:relative; overflow:hidden; margin:14px 66px 20px 0;">
                 <svg width="100%" height="56" viewBox="0 0 1100 56" preserveAspectRatio="none" style="display:block;">
@@ -296,7 +335,7 @@ const TOOL_TABS = [
                 </thead>
                 <tbody style="color:#e4dfdc; font-size:14px;">
                   {table.rows.map((row, i) => (
-                    <tr>
+                    <tr data-amount={table.key === "forward" ? forwardAmounts[i] : undefined}>
                       <td translate="no" style={`padding:9px 0; ${i < table.rows.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>{row.from}</td>
                       <td translate="no" style={`padding:9px 0; text-align:right; font-variant-numeric:tabular-nums; ${i < table.rows.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>{row.to}</td>
                     </tr>
@@ -329,39 +368,105 @@ const TOOL_TABS = [
                 </div>
               ))}
             </div>
-            <p id="stat-summary" style="font-size:13px; color:#a79fa0; line-height:1.6; margin:18px 0 0;">{content.summary}</p>
+            {/* On the canonical pages the written summary lives in the 7-day
+                section below; this one is rewritten by the range tabs and
+                would only repeat it in template form. */}
+            {!isCanonical && (
+              <p id="stat-summary" style="font-size:13px; color:#a79fa0; line-height:1.6; margin:18px 0 0;">{content.summary}</p>
+            )}
           </div>
         </div>
 
-        <div style="margin-top:24px;">
-          <h2 class="pair-section-title" style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
-            Understanding the <span translate="no">{base}/{target}</span> rate
-          </h2>
-          <div class="pair-context-grid" style="display:grid; grid-template-columns:repeat(2,1fr); gap:16px;">
-            {content.contextCards.map((card) => (
-              <div style={`${cardBg} border-radius:14px; padding:20px 22px;`}>
-                <h3 style="margin:0 0 8px; font-size:15px; color:#f5f2f1;">{card.title}</h3>
-                <p style="margin:0; font-size:14px; line-height:1.6; color:#a79fa0;">{card.body}</p>
-              </div>
-            ))}
+        {isCanonical ? (
+          <section id="pair-week" style={`${cardBg} border-radius:16px; padding:24px 28px; margin-top:24px;`}>
+            <h2 class="pair-section-title" style="margin:0 0 14px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+              <span translate="no">{base}/{target}</span> over the last {WINDOW_DAYS} days
+            </h2>
+            <p id="pair-summary" style="margin:0 0 20px; font-size:15px; line-height:1.7; color:#d6d0cd;">{summary}</p>
+            <div class="pair-week-grid" style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:20px;">
+              {[
+                { label: `${WINDOW_DAYS}-day high`, value: week ? formatRate(week.high) : "—" },
+                { label: `${WINDOW_DAYS}-day low`, value: week ? formatRate(week.low) : "—" },
+                { label: `${WINDOW_DAYS}-day average`, value: week ? formatRate(week.average) : "—" },
+                { label: `${WINDOW_DAYS}-day change`, value: weekChange },
+              ].map((tile) => (
+                <div>
+                  <div style="font-size:12px; color:#a79fa0; text-transform:uppercase; letter-spacing:.05em;">{tile.label}</div>
+                  <div translate="no" style="font-size:18px; font-weight:700; color:#f5f2f1; margin-top:4px; font-variant-numeric:tabular-nums;">{tile.value}</div>
+                </div>
+              ))}
+            </div>
+            <h3 style="margin:0 0 6px; font-size:15px; color:#f5f2f1;">How this rate is calculated</h3>
+            <p style="margin:0 0 10px; font-size:14px; line-height:1.65; color:#a79fa0;">
+              {methodNote(base, target)} Rates are updated continuously, on the schedule set by the provider. The statistics above use every rate stored over the last {WINDOW_DAYS} days{week ? ` (${week.points} data points)` : ""}.
+              These are mid-market reference rates: banks and transfer services add their own margin and fees.
+            </p>
+            <p style="margin:0; font-size:13px; color:#8b857f;">
+              Data source: <a href={DATA_SOURCE.url} rel="noopener" style="color:#ff4d6d;">{DATA_SOURCE.name}</a>
+              {model.latest && <> · Last updated <time datetime={updatedIso}>{updated}</time></>}
+            </p>
+          </section>
+        ) : (
+          <div style="margin-top:24px;">
+            <h2 class="pair-section-title" style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+              Understanding the <span translate="no">{base}/{target}</span> rate
+            </h2>
+            <div class="pair-context-grid" style="display:grid; grid-template-columns:repeat(2,1fr); gap:16px;">
+              {content.contextCards.map((card) => (
+                <div style={`${cardBg} border-radius:14px; padding:20px 22px;`}>
+                  <h3 style="margin:0 0 8px; font-size:15px; color:#f5f2f1;">{card.title}</h3>
+                  <p style="margin:0; font-size:14px; line-height:1.6; color:#a79fa0;">{card.body}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {background && (
+          <section id="pair-background" style={`${cardBg} border-radius:16px; padding:24px 28px; margin-top:24px;`}>
+            <h2 class="pair-section-title" style="margin:0 0 12px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+              About <span translate="no">{base}</span> and <span translate="no">{target}</span>
+            </h2>
+            <p style="margin:0; font-size:15px; line-height:1.7; color:#d6d0cd;">{background}</p>
+          </section>
+        )}
 
         <div id="faq" style="margin-top:24px; margin-bottom:8px;">
           <h2 class="pair-section-title" style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
             <span translate="no">{base}</span> to <span translate="no">{target}</span> FAQ
           </h2>
           <div class="pair-faq-card" style={`${cardBg} border-radius:16px; padding:6px 28px;`}>
-            {content.faqs.map((item, i) => (
-              <div style={`padding:18px 0; ${i < content.faqs.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>
-                <div style="font-size:15px; font-weight:600; color:#f5f2f1; margin-bottom:6px;">{item.question}</div>
+            {faqs.map((item, i) => (
+              <div style={`padding:18px 0; ${i < faqs.length - 1 ? "border-bottom:1px solid #2a2426;" : ""}`}>
+                <h3 class="faq-q" style="margin:0 0 6px; font-size:15px; font-weight:600; color:#f5f2f1;">{item.question}</h3>
                 <div style="font-size:14px; line-height:1.6; color:#a79fa0;">{item.answer}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {menu.activeHeaderLinks.length > 0 && (
+        {related.length > 0 && (
+          <div id="related-pairs" style="margin-top:24px;">
+            <h2 class="pair-section-title" style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
+              Related pairs
+            </h2>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px;">
+              {related.map(([b, t]) => (
+                <a
+                  href={pairUrl(b, t)}
+                  translate="no"
+                  style="display:block; border:1px solid #2a2426; border-radius:10px; background:#151315; color:#e4dfdc; font-size:13px; font-weight:600; padding:11px 14px; text-align:center;"
+                >
+                  {b} to {t}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* The other pair pages keep the menu's pairs for this currency; the
+            canonical ones link only to other canonical pairs, above. */}
+        {!isCanonical && menu.activeHeaderLinks.length > 0 && (
           <div style="margin-top:24px;">
             <h2 class="pair-section-title" style="margin:0 0 16px; font-family:'Space Grotesk', Arial, sans-serif; font-size:20px; color:#f5f2f1;">
               More <span translate="no">{base}</span> pairs
@@ -473,6 +578,12 @@ const TOOL_TABS = [
     #stats-card,
     #faq {
       scroll-margin-top: 24px;
+    }
+
+    @media (max-width: 767px) {
+      .pair-week-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -749,10 +860,14 @@ const TOOL_TABS = [
         changeValue.textContent = `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`;
         changeValue.style.color = changePct > 0.01 ? "#16a34a" : changePct < -0.01 ? "#e11d3f" : "#8b857f";
         document.getElementById("change-range").textContent = `(${key})`;
-        const trend = changePct > 0.01 ? "has moved higher" : changePct < -0.01 ? "has moved lower" : "has stayed inside a narrow range";
-        document.getElementById("stat-summary").textContent =
-          `${pairLabel} ${trend} over the selected ${key} window. The observed range is about ${rangePct.toFixed(2)}% `
-          + `between the high and low, across ${values.length} stored update points.`;
+        // Absent on the canonical pages, whose summary is written server-side.
+        const statSummary = document.getElementById("stat-summary");
+        if (statSummary) {
+          const trend = changePct > 0.01 ? "has moved higher" : changePct < -0.01 ? "has moved lower" : "has stayed inside a narrow range";
+          statSummary.textContent =
+            `${pairLabel} ${trend} over the selected ${key} window. The observed range is about ${rangePct.toFixed(2)}% `
+            + `between the high and low, across ${values.length} stored update points.`;
+        }
 
         // Overview strip: the whole stored history, with the part outside the
         // selected window dimmed so the tab choice is visible as a selection.

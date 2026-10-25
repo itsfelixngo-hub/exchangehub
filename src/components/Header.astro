@@ -6,7 +6,7 @@ interface Props {
   pairMovers: PairMovers;
   /** "none" for pages that aren't one of the nav destinations (the policy
    *  pages), so nothing in the bar is highlighted. */
-  active?: "ExchangeHub" | "Rates" | "Charts" | "Convert" | "Analysis" | "none";
+  active?: "ExchangeHub" | "Rates" | "Charts" | "Convert" | "Analysis" | "About" | "Contact" | "none";
   autoLang?: SupportedLanguage;
 }
 
@@ -32,22 +32,30 @@ const navLinks: { label: string; href: string }[] = [
   { label: "Convert", href: "/#converter" },
   // Points at the analysis index. It used to point at /about, which promised
   // market commentary and delivered the company page — and lit this tab up
-  // whenever someone was reading About. About lives in the footer with the
-  // other company pages.
+  // whenever someone was reading About.
   { label: "Analysis", href: "/analysis" },
+  // Who runs the site and how to reach them, one click from every page. The
+  // other policy pages stay in the footer.
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/contact" },
 ];
 ---
 
-<div style="background:#0f0e0d;">
+<header style="background:#0f0e0d;">
   <div class="page-pad hdr-meta" style="max-width:1240px; margin:0 auto; padding:10px 40px; display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); font-family:'Source Sans 3', Arial, sans-serif; font-size:12px; color:rgba(255,255,255,0.55); letter-spacing:.03em;">
-    <span id="local-date"></span>
-    <span id="local-clock"></span>
+    {/* Filled in by the script below. The non-breaking space gives the row
+        its line height from the first paint, so the header does not grow by
+        a line — and push the whole page down — when the text arrives. */}
+    <span id="local-date">&nbsp;</span>
+    <span id="local-clock">&nbsp;</span>
   </div>
   <div style="border-top:1px solid #0f0e0d; border-bottom:1px solid #0f0e0d; background:#0f0e0d;">
     <div class="page-pad hdr-main" style="max-width:1240px; margin:0 auto; padding:0 40px; display:flex; align-items:center; justify-content:space-between; gap:24px; height:64px; font-family:'Source Sans 3', Arial, sans-serif;">
       <div class="hdr-logo" style="display:flex; align-items:center; flex:0 0 auto;">
         <a href="/" style="display:inline-flex; align-items:center;">
-          <img src="/ratehub-2b-icon.png" alt="ExchangeHub" style="height:30px; width:auto; display:block;" />
+          {/* 700×224 file drawn 30px tall; the attributes let the browser
+              reserve the box before the image arrives. */}
+          <img src="/ratehub-2b-icon.png" alt="ExchangeHub" width="94" height="30" style="height:30px; width:auto; display:block;" />
         </a>
       </div>
       <div class="hdr-nav" style="display:flex; align-items:center; gap:32px;">
@@ -135,7 +143,7 @@ const navLinks: { label: string; href: string }[] = [
       </div>
     </div>
   )}
-</div>
+</header>
 
 <style>
   @keyframes ticker-scroll {
@@ -328,7 +336,10 @@ const navLinks: { label: string; href: string }[] = [
       commit(wanted);
       return;
     }
-    if (++attempts < 25) pumpTimer = window.setTimeout(pump, 200);
+    // Ten seconds: the loader may only start when the visitor clicks a
+    // language (see the inline script at the bottom), so the widget can still
+    // be on its way in over a slow connection.
+    if (++attempts < 50) pumpTimer = window.setTimeout(pump, 200);
   }
 
   document.querySelectorAll<HTMLElement>(".translate-option").forEach((option) => {
@@ -367,15 +378,47 @@ const navLinks: { label: string; href: string }[] = [
 
 </script>
 
-<!-- The callback has to exist before Google's async script runs, so it is
-     defined in a plain inline script rather than the module above (which
-     Astro defers, and which would therefore lose the race). -->
-<script is:inline>
+<!-- The callback has to exist before Google's script runs, so it is defined in
+     a plain inline script rather than the module above (which Astro defers,
+     and which would therefore lose the race).
+
+     The loader itself is not in the markup any more. It pulls in a further
+     ~100 KB of script and stylesheet and does its own DOM work, and on a slow
+     phone that competed with the page's own first paint (LCP) for every
+     visitor, though most read the page in English. So it is fetched:
+       - at once, when the visitor is being auto-translated or already chose a
+         language (a googtrans cookie), because then they need it now;
+       - on the first click of the language button, for anyone else;
+       - otherwise after the page has loaded and the browser is idle.
+     The pump in the module above already retries until the widget exists. -->
+<script is:inline data-auto-lang={autoLang}>
   window.googleTranslateElementInit = function googleTranslateElementInit() {
     new window.google.translate.TranslateElement(
       { pageLanguage: "en", includedLanguages: "en,vi,zh-CN,ja,es,fr", autoDisplay: false },
       "google_translate_element",
     );
   };
+  (function () {
+    var loaded = false;
+    function loadTranslate() {
+      if (loaded) return;
+      loaded = true;
+      var script = document.createElement("script");
+      script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    window.__loadTranslate = loadTranslate;
+    var autoLang = document.currentScript && document.currentScript.dataset.autoLang;
+    if ((autoLang && autoLang !== "en") || /(?:^|;\s*)googtrans=/.test(document.cookie)) {
+      loadTranslate();
+      return;
+    }
+    var toggle = document.getElementById("translate-toggle");
+    if (toggle) toggle.addEventListener("click", loadTranslate, { once: true });
+    window.addEventListener("load", function () {
+      if ("requestIdleCallback" in window) window.requestIdleCallback(loadTranslate, { timeout: 4000 });
+      else setTimeout(loadTranslate, 2000);
+    });
+  })();
 </script>
-<script is:inline src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" async></script>

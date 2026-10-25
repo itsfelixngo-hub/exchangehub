@@ -112,22 +112,6 @@ export function pairKey(base: string, target: string): string {
   return `${base.toLowerCase()}_${target.toLowerCase()}`;
 }
 
-// Every pair page is built from one template in lib/pair.ts: the numbers,
-// chart and statistics are genuinely per-pair, but the prose around them is
-// the same sentences with the currency names swapped. Ad networks and Google's
-// own spam policy call that scaled content, and 59 near-identical pages
-// submitted at once is what gets a site rejected.
-//
-// The 38 pairs reachable from the header menu are the hand-picked ones people
-// actually search for. The rest exist because the fetcher stores a file for
-// every currency against USD -- AED/USD, IDR/USD and friends -- and they are
-// pure long tail.
-//
-// Turning NOINDEX_LONGTAIL_PAIRS on marks that long tail `noindex` and drops
-// it from the sitemap, leaving 38 curated pages for review. It is OFF by
-// default: removing pages from an index is not something that should happen as
-// a side effect of a deploy. Turn it off again once those pages carry writing
-// of their own.
 /**
  * Every pair page the site serves, deduplicated. Three sources:
  *
@@ -146,8 +130,8 @@ export function pairKey(base: string, target: string): string {
  * make a valid URL, which is 700-odd pages, and most of them nobody asks for.
  * Stored data in both directions, plus the curated set, is the line.
  *
- * Shared by the sitemap (which then drops the noindexed ones) and the analysis
- * index (which does not — a page kept out of search still works for a reader).
+ * Used by the analysis index, which links every one of them — a page kept out
+ * of search still works for a reader. The sitemap lists CANONICAL_PAIRS only.
  */
 let allPairsCache: [string, string][] | null = null;
 
@@ -181,24 +165,90 @@ export function pairsForBase(base: string): [string, string][] {
   return allPairs().filter(([pairBase]) => pairBase === code) as [string, string][];
 }
 
-let featuredPairsCache: Set<string> | null = null;
+// Every pair page is built from one template in lib/pair.ts: the numbers,
+// chart and statistics are genuinely per-pair, but the prose around them is
+// the same sentences with the currency names swapped. Ad networks and Google's
+// own spam policy call that scaled content, and hundreds of near-identical
+// pages submitted at once is what gets a site rejected.
+//
+// So only pairs between the core currencies below are put forward for
+// indexing, and only in one direction each: the reverse direction carries a
+// canonical pointing at it (and no noindex — the two together send Google
+// contradictory signals). Every pair outside the core still renders for
+// visitors but carries `noindex,follow` and stays out of sitemap.xml.
+// robots.txt must not block those pages: a crawler that cannot fetch a page
+// never sees its noindex.
 
-export function featuredPairKeys(): Set<string> {
-  if (!featuredPairsCache) {
-    featuredPairsCache = new Set(
-      Object.entries(MENU_GROUPS).flatMap(([base, targets]) =>
-        targets.filter((target) => target !== base).map((target) => pairKey(base, target))),
+/** The only currencies whose pairs are offered for indexing. */
+export const INDEXABLE_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "VND", "CNY"] as const;
+
+/**
+ * The indexable direction of each core pair, quoted the way the market quotes
+ * it (EUR before GBP before USD before CNY before JPY before VND). These are
+ * the pair URLs in sitemap.xml. The reverse direction (/vnd-usd, /usd-eur…)
+ * still renders, and names its counterpart here as canonical.
+ *
+ * Must hold every pairing of INDEXABLE_CURRENCIES exactly once, which is
+ * checked below: adding a currency without its pairs fails at import, so in
+ * `npm run build` (scripts/check-sitemap.mjs) rather than in production.
+ */
+export const CANONICAL_PAIRS: readonly (readonly [string, string])[] = [
+  ["EUR", "USD"], ["GBP", "USD"], ["USD", "JPY"], ["USD", "CNY"],
+  ["USD", "VND"], ["EUR", "VND"], ["GBP", "VND"], ["JPY", "VND"], ["CNY", "VND"],
+  ["EUR", "GBP"], ["EUR", "JPY"], ["EUR", "CNY"], ["GBP", "JPY"], ["GBP", "CNY"], ["CNY", "JPY"],
+];
+
+{
+  const core = new Set<string>(INDEXABLE_CURRENCIES);
+  const pairings = new Set(CANONICAL_PAIRS.map(([base, target]) => [base, target].sort().join("_")));
+  const expected = (core.size * (core.size - 1)) / 2;
+  const stray = CANONICAL_PAIRS.filter(([base, target]) => base === target || !core.has(base) || !core.has(target));
+  if (stray.length || pairings.size !== CANONICAL_PAIRS.length || pairings.size !== expected) {
+    throw new Error(
+      `CANONICAL_PAIRS must list each of the ${expected} pairings of INDEXABLE_CURRENCIES exactly once`
+      + ` (has ${CANONICAL_PAIRS.length}, ${pairings.size} distinct${stray.length ? `, stray: ${stray.map((p) => p.join("/")).join(", ")}` : ""})`,
     );
   }
-  return featuredPairsCache;
 }
 
-const NOINDEX_LONGTAIL = ["1", "true", "yes", "on"]
-  .includes((process.env.NOINDEX_LONGTAIL_PAIRS ?? "").trim().toLowerCase());
+const canonicalPairKeys = new Set(CANONICAL_PAIRS.map(([base, target]) => pairKey(base, target)));
 
-/** True when this pair page should ask search engines not to index it. */
+/** True for the 15 pair pages offered for indexing, in their canonical direction only. */
+export function pairIsIndexable(base: string, target: string): boolean {
+  return canonicalPairKeys.has(pairKey(base, target));
+}
+
+/**
+ * The canonical direction of a pair between two core currencies — the pair
+ * itself or its reverse — or null when either currency is outside the core,
+ * in which case the page is its own canonical.
+ */
+export function canonicalPair(base: string, target: string): [string, string] | null {
+  if (canonicalPairKeys.has(pairKey(base, target))) return [base, target];
+  if (canonicalPairKeys.has(pairKey(target, base))) return [target, base];
+  return null;
+}
+
+/**
+ * noindex only outside the core. A reverse-direction core page (/vnd-usd) is
+ * left indexable and relies on its canonical alone.
+ */
 export function pairIsNoindex(base: string, target: string): boolean {
-  return NOINDEX_LONGTAIL && !featuredPairKeys().has(pairKey(base, target));
+  return canonicalPair(base, target) === null;
+}
+
+/**
+ * Canonical pairs to link from a pair page: those sharing a currency with it,
+ * then the rest, never the page itself or its reverse. Only canonical pairs,
+ * so every related link is a page that is in the sitemap.
+ */
+export function relatedCanonicalPairs(base: string, target: string, limit = 6): [string, string][] {
+  const own = canonicalPair(base, target);
+  const others = CANONICAL_PAIRS.filter(([b, t]) => !own || pairKey(b, t) !== pairKey(own[0], own[1]));
+  const shares = ([b, t]: readonly [string, string]) => [b, t].some((code) => code === base || code === target);
+  return [...others.filter(shares), ...others.filter((pair) => !shares(pair))]
+    .slice(0, limit)
+    .map(([b, t]) => [b, t]);
 }
 
 export function pairUrl(base: string, target: string): string {

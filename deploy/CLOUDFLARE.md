@@ -37,6 +37,45 @@ nothing more.
 
 ---
 
+## 0. One host: ratehubfx.com
+
+`https://ratehubfx.com` is the only canonical host. `www` and plain HTTP must
+answer with **one** 301 straight to it — not a chain through
+`https://www.ratehubfx.com`.
+
+Create it at the edge, so the request never reaches the VPS:
+**Rules → Redirect Rules → Create rule** (a Single Redirect):
+
+| Field | Value |
+|---|---|
+| Rule name | `Canonical host: https://ratehubfx.com` |
+| When incoming requests match (expression editor) | `(http.host eq "www.ratehubfx.com") or (http.host eq "ratehubfx.com" and not ssl)` |
+| Then — URL redirect type | Dynamic |
+| Expression | `concat("https://ratehubfx.com", http.request.uri.path)` |
+| Status code | 301 |
+| Preserve query string | on |
+
+The rule covers HTTP → HTTPS for both hosts as well, so if a check still shows
+two hops for `http://www.ratehubfx.com/` (Always Use HTTPS answering first with
+`https://www…`), turn **SSL/TLS → Edge Certificates → Always Use HTTPS** off —
+this rule then does that job in one hop.
+
+Behind it, two backstops for anything that reaches the origin directly: nginx's
+port 80 block returns `https://ratehubfx.com$request_uri`, and the app's
+middleware 301s any `www.` host (`wwwRedirectOrigin` in `src/lib/site.ts`).
+
+**Verify.** Each should print `301 https://ratehubfx.com/`:
+
+```bash
+for u in http://ratehubfx.com/ http://www.ratehubfx.com/ https://www.ratehubfx.com/; do
+  printf '%-28s ' "$u"; curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$u"
+done
+```
+
+Or run everything at once: `npm run check:seo -- https://ratehubfx.com`.
+
+---
+
 ## 1. DNS through Cloudflare
 
 `ratehubfx.com` and `www` are proxied (orange cloud). `mail.ratehubfx.com` is

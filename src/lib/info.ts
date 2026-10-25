@@ -1,7 +1,7 @@
 import "./env";
 
-// Copy carried over verbatim from the Flask app's INFO_PAGES (app.py), so the
-// two front ends say the same thing while both are live.
+// The one email address the site shows anywhere. Started as the Flask app's
+// INFO_PAGES copy; About and Disclaimer have since been rewritten.
 export const CONTACT_EMAIL = process.env.SITE_CONTACT_EMAIL ?? "contact@ratehubfx.com";
 
 /**
@@ -10,9 +10,13 @@ export const CONTACT_EMAIL = process.env.SITE_CONTACT_EMAIL ?? "contact@ratehubf
  * than the old behaviour, which stamped today onto every URL on every crawl
  * and taught Google to ignore this site's lastmod entirely.
  */
-export const INFO_CONTENT_LAST_MODIFIED = "2026-09-13";
+export const INFO_CONTENT_LAST_MODIFIED = "2026-10-25";
 
-export type InfoSection = { heading: string; body: string[] };
+export type InfoSection = {
+  heading: string;
+  /** Plain text. `[label](https://…)` becomes a link, and CONTACT_EMAIL a mailto link (InfoPage.astro). */
+  body: string[];
+};
 
 export type InfoPage = {
   /** Small pill above the title. */
@@ -26,29 +30,35 @@ export type InfoPage = {
 export const INFO_PAGES = {
   about: {
     eyebrow: "About",
-    title: "About ExchangeHub",
-    description: "Learn how ExchangeHub builds currency converters, exchange-rate charts, indexed dashboards, and educational exchange-rate explainers.",
-    heading: "About ExchangeHub",
+    title: "About ratehubfx.com",
+    description: "ratehubfx.com is an independent exchange-rate reference site run from Vietnam, with mid-market rates from Open Exchange Rates, a converter, charts and 7-day statistics.",
+    heading: "About ratehubfx.com",
     sections: [
       {
-        heading: "What this site does",
+        heading: "What this site is",
         body: [
-          "ExchangeHub is a currency reference site built around practical tools: exchange-rate converters, pair pages, comparison tables, raw rate charts, and indexed dashboards.",
-          "The goal is to make exchange-rate movement easier to read. A pair page shows the actual rate for one currency pair, while the dashboard uses a base-100 index so many currencies can be compared on the same scale.",
+          "ratehubfx.com (shown in the header as ExchangeHub) is a small reference site for checking exchange rates. Each currency pair has its own page with the latest mid-market rate, a converter, a chart, and statistics for the last 7 days: the high, the low, the average and the change.",
+          "Most attention goes to the pairs between the US dollar, euro, British pound, Japanese yen, Chinese yuan and Vietnamese dong, because those are the conversions the site's readers look up most. Other currencies are covered against the US dollar.",
         ],
       },
       {
-        heading: "How we add value",
+        heading: "Who runs it",
         body: [
-          "Raw exchange rates can be hard to compare because each pair has a different scale. VND pairs may use very large numbers while EUR or GBP pairs may be below 2. ExchangeHub explains both the raw rate and the relative movement behind it.",
-          "Each supported pair can include latest conversion tables, high-low-average statistics, reverse rates, trend context, and plain-language explanations for non-specialist readers.",
+          "ratehubfx.com is operated by Ngo Minh Tam, based in Vietnam. It is an independent project, not a bank, broker, money-transfer service or any other kind of financial institution. The site does not exchange, hold or send money, and it is not affiliated with any company that does.",
         ],
       },
       {
-        heading: "Data and accuracy",
+        heading: "Where the rates come from",
         body: [
-          "Rates are collected on a configured schedule and stored locally before being shown on the site. Pages include update timestamps so readers can understand when the displayed data was last refreshed.",
-          "Exchange rates are provided for informational reference only. Actual rates from banks, brokers, card networks, exchanges, and remittance providers may include spreads, fees, timing differences, and rounding rules.",
+          "Rates come from [Open Exchange Rates](https://openexchangerates.org/), which publishes a mid-market rate for each currency against the US dollar. They are updated continuously, on the schedule set by the provider.",
+          "Rates between two currencies other than the dollar, such as EUR/VND, are calculated from each currency's dollar rate at the same update. Every pair page shows when its rate was last updated.",
+        ],
+      },
+      {
+        heading: "What the numbers are for",
+        body: [
+          "The rates are a reference for comparison. A bank, card or transfer service will quote its own rate, usually with a margin and fees on top of the mid-market rate, so the amount you actually receive will differ. Nothing on this site is financial advice; the disclaimer page explains the limits in more detail.",
+          `Corrections and questions are welcome at ${CONTACT_EMAIL}.`,
         ],
       },
     ],
@@ -182,10 +192,17 @@ export const INFO_PAGES = {
     heading: "Exchange Rate Disclaimer",
     sections: [
       {
-        heading: "Rates are not transaction quotes",
+        heading: "Rates are indicative only",
         body: [
-          "The rates shown on ExchangeHub are reference rates for comparison. They are not guaranteed transaction rates and should not be treated as a binding quote.",
+          "The rates shown on ratehubfx.com are indicative mid-market reference rates for comparison. They are not guaranteed transaction rates, should not be treated as a binding quote, and nothing on this site is financial advice.",
           "Banks, remittance companies, card networks, brokers, and exchanges may use different bid/ask rates, spreads, fees, minimums, maximums, or settlement timing.",
+        ],
+      },
+      {
+        heading: "Data source",
+        body: [
+          "Rates come from [Open Exchange Rates](https://openexchangerates.org/) and are updated continuously, on the schedule set by the provider. A rate shown here may lag the market, and may be older if the source or this site is temporarily unavailable.",
+          "Rates between two non-dollar currencies are calculated from each currency's US dollar rate. Every pair page shows the time of its last update, and the statistics cover the last 7 days of stored data only.",
         ],
       },
       {

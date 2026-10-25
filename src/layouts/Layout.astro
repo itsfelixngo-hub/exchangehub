@@ -14,13 +14,16 @@ interface Props {
   breadcrumbParent?: { name: string; path: string };
   extraSchemaNodes?: unknown[];
   ogImage?: string;
-  /** Ask search engines to leave this page out — see pairIsNoindex(). */
+  /** Ask search engines to leave this page out — see pairIsIndexable(). */
   noindex?: boolean;
+  /** Where rel=canonical and og:url point when that is not `path` itself:
+   *  a reverse-direction pair names its indexable direction. See canonicalPair(). */
+  canonicalPath?: string;
 }
 
 const {
   title, description, path, breadcrumbName, breadcrumbParent,
-  extraSchemaNodes = [], ogImage, noindex = false,
+  extraSchemaNodes = [], ogImage, noindex = false, canonicalPath,
 } = Astro.props;
 
 // The CJK faces are the one part still served by Google. Unlike the latin
@@ -34,7 +37,10 @@ const visitorLang = resolveVisitorLocale(Astro.request, Astro.cookies.get("site_
 const needsCjkFonts = visitorLang === "zh-CN" || visitorLang === "ja";
 
 const siteBaseUrl = siteOrigin(Astro.request, Astro.url);
-const canonicalUrl = siteBaseUrl + path;
+// The JSON-LD below describes the page that was served, so its @ids use the
+// page's own URL; only rel=canonical and og:url follow canonicalPath.
+const pageUrl = siteBaseUrl + path;
+const canonicalUrl = siteBaseUrl + (canonicalPath ?? path);
 const logoUrl = `${siteBaseUrl}/ratehub-2c.png`;
 const ogImageUrl = ogImage ?? `${siteBaseUrl}/og-image.png`;
 // Only the built-in card has known dimensions. Facebook renders a small card
@@ -68,13 +74,13 @@ const schema = {
     },
     {
       "@type": "WebPage",
-      "@id": `${canonicalUrl}#webpage`,
-      url: canonicalUrl,
+      "@id": `${pageUrl}#webpage`,
+      url: pageUrl,
       name: title,
       description,
       isPartOf: { "@id": `${siteBaseUrl}/#website` },
       publisher: { "@id": `${siteBaseUrl}/#organization` },
-      breadcrumb: { "@id": `${canonicalUrl}#breadcrumb` },
+      breadcrumb: { "@id": `${pageUrl}#breadcrumb` },
       inLanguage: "en",
     },
     {
@@ -82,7 +88,7 @@ const schema = {
       // pair — so the trail Google prints under the result mirrors the way the
       // pages actually nest rather than flattening every page onto the root.
       "@type": "BreadcrumbList",
-      "@id": `${canonicalUrl}#breadcrumb`,
+      "@id": `${pageUrl}#breadcrumb`,
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Exchange Rates", item: siteBaseUrl },
         ...(breadcrumbParent

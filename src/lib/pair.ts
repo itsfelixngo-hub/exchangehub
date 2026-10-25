@@ -32,6 +32,9 @@ export type PairModel = {
 // Nominal size decides which ladder of amounts is worth printing: "1 VND"
 // converts to a rounding error in every other currency, and "1,000,000 USD"
 // is not a row anyone reads off a reference table.
+/** The conversion ladder on the 15 canonical pair pages: one short, fixed set. */
+export const CANONICAL_AMOUNTS = [1, 5, 10, 50, 100, 500, 1000];
+
 export function pairAmounts(base: string): number[] {
   const highNominal = new Set(["VND", "IDR", "KRW"]);
   const mediumNominal = new Set(["JPY", "PHP", "TWD", "THB", "INR"]);
@@ -121,20 +124,22 @@ export function rangeOptions(series: [number, number][]): { options: RangeOption
     };
   }
   const span = series[series.length - 1][0] - series[0][0];
-  const options: RangeOption[] = [];
-  let defaultKey = "";
-  for (const window of RANGE_WINDOWS) {
-    // A window is worth offering while it still crops the stored history;
-    // the first one that covers all of it becomes the default "whole
-    // history" view, and anything wider is redundant.
-    const enabled = !defaultKey;
-    if (enabled && window.seconds >= span) defaultKey = window.key;
-    options.push({ ...window, enabled: enabled && pointsInWindow(series, window.seconds) >= 2 });
+  // A window is offered only when the stored history actually fills it. This
+  // used to also enable the first window wider than the history and make it
+  // the default — with a week stored, that labelled seven days of data "1M".
+  // The 5% slack lets a window that the history only just misses (a fetch
+  // gap at the start of the week) still count as covered.
+  const options = RANGE_WINDOWS.map((window) => ({
+    ...window,
+    enabled: window.seconds <= span * 1.05 && pointsInWindow(series, window.seconds) >= 2,
+  }));
+  const widest = [...options].reverse().find((option) => option.enabled);
+  if (!widest) {
+    // Under 12 hours stored: draw everything under the narrowest label.
+    options[0].enabled = true;
+    return { options, defaultKey: options[0].key };
   }
-  if (!defaultKey) defaultKey = RANGE_WINDOWS[RANGE_WINDOWS.length - 1].key;
-  const chosen = options.find((option) => option.key === defaultKey);
-  if (chosen) chosen.enabled = true;
-  return { options, defaultKey };
+  return { options, defaultKey: widest.key };
 }
 
 function pointsInWindow(series: [number, number][], seconds: number): number {

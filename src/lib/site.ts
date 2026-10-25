@@ -39,6 +39,25 @@ export const SITE_ALTERNATE_NAME = "RateHubFX";
  */
 export const ICON_VERSION = "2";
 
+/**
+ * Where a request that arrived on `www.` belongs: SITE_URL when it is set (and
+ * is not itself a www host — that would loop), otherwise the same host without
+ * the prefix, over https. Null when the request is not on a www host.
+ *
+ * The canonical host is ratehubfx.com; www answered 200 with the same pages,
+ * which split every URL in two. The redirect should happen at Cloudflare
+ * (deploy/CLOUDFLARE.md, "One host"); this is the backstop for anything that
+ * reaches the origin anyway.
+ */
+export function wwwRedirectOrigin(request: Request, url: URL): string | null {
+  const host = (request.headers.get("x-forwarded-host")?.split(",")[0] ?? request.headers.get("host") ?? url.host)
+    .trim()
+    .toLowerCase();
+  if (!host.startsWith("www.")) return null;
+  if (CONFIGURED && !new URL(CONFIGURED).host.startsWith("www.")) return CONFIGURED;
+  return `https://${host.slice(4)}`;
+}
+
 export function siteOrigin(request: Request, url: URL): string {
   if (CONFIGURED) return CONFIGURED;
   const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();

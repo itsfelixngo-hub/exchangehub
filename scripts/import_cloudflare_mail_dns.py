@@ -250,7 +250,9 @@ def main():
     args.ip = args.ip or env("MAIL_SERVER_IP") or env("VPS_IP")
     args.mx_priority = args.mx_priority or int(env("MAIL_MX_PRIORITY") or "10")
     args.spf = args.spf or env("MAIL_SPF") or "v=spf1 mx -all"
-    args.dmarc = args.dmarc or env("MAIL_DMARC") or "v=DMARC1; p=quarantine; rua=mailto:test.noreply909@gmail.com"
+    # No rua= by default: a report address published in DNS is public, so it is
+    # opt-in via MAIL_DMARC rather than baked into the script.
+    args.dmarc = args.dmarc or env("MAIL_DMARC") or "v=DMARC1; p=quarantine"
     if not args.ip:
         print("Missing MAIL_SERVER_IP or VPS_IP", file=sys.stderr)
         return 2

@@ -1,5 +1,5 @@
 import { defineMiddleware } from "astro:middleware";
-import { siteOrigin } from "./lib/site";
+import { siteOrigin, wwwRedirectOrigin } from "./lib/site";
 
 // Astro's own origin check is turned off in astro.config.mjs and replaced by
 // this one, because it compared the browser's Origin against the scheme of the
@@ -54,8 +54,7 @@ const ICON_ASSET = /^\/(favicon|apple-touch-icon)[^/]*\.(png|ico)$/i;
 
 function staticCachePolicy(pathname: string): string | null {
   if (pathname.startsWith("/api/")) return "public, max-age=60, stale-while-revalidate=300";
-  // The index and every section under it (/sitemap-pairs-vnd.xml and friends).
-  if (/^\/sitemap(-[a-z-]+)?\.xml$/.test(pathname) || pathname === "/robots.txt") return "public, max-age=3600";
+  if (pathname === "/sitemap.xml" || pathname === "/robots.txt") return "public, max-age=3600";
   if (ICON_ASSET.test(pathname)) return "public, max-age=604800";
   if (STATIC_ASSET.test(pathname)) return "public, max-age=31536000, immutable";
   return null;
@@ -82,7 +81,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // Only GET/HEAD: redirecting a POST would drop the body (the contact form
   // posts to /contact).
   if (context.request.method === "GET" || context.request.method === "HEAD") {
+    // www and path normalisation in the same hop: www.…/EUR_USD/ goes straight
+    // to https://ratehubfx.com/eur-usd, not via https://ratehubfx.com/EUR_USD/.
+    const wwwOrigin = wwwRedirectOrigin(context.request, context.url);
     const target = canonicalPath(context.url.pathname);
+    if (wwwOrigin) {
+      return new Response(null, {
+        status: 301,
+        headers: { location: wwwOrigin + (target ?? context.url.pathname) + context.url.search },
+      });
+    }
     if (target) {
       return context.redirect(target + context.url.search, 301);
     }

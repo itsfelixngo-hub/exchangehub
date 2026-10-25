@@ -92,11 +92,11 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
         <div style="display:flex; flex-direction:column; gap:24px; align-items:flex-start; font-family:'Manrope', Arial, sans-serif;">
           <span style="display:inline-flex; align-items:center; gap:8px; background:rgba(225,29,63,0.14); border:1px solid rgba(225,29,63,0.4); color:#ff4d6d; font-size:13px; font-weight:600; padding:7px 14px; border-radius:999px;">
             <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#ff4d6d" /></svg>
-            Live &middot; updated every 5 minutes
+            Live &middot; rates from Open Exchange Rates
           </span>
           <h1 style="font-family:'Space Grotesk', Arial, sans-serif; font-size:52px; line-height:1.1; font-weight:700; letter-spacing:-0.02em; color:#f5f2f1; margin:0;">Exchange rates,<br />right now.</h1>
           <p style="font-size:17px; line-height:1.65; color:#a79fa0; max-width:500px; margin:0;">
-            Track {configCurrencies().length} currencies with live charts and full historical data — all in one dashboard.
+            Track {configCurrencies().length} currencies with live charts, a converter and 7-day statistics — all in one dashboard.
             {model.updated && <> Updated {model.updated}.</>}
           </p>
           <div class="home-cta" style="display:flex; gap:14px; flex-wrap:wrap;">

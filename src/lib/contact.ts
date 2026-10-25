@@ -5,7 +5,9 @@ import { CONTACT_EMAIL } from "./info";
 
 // Ported from the Flask app's contact form (app.py): the same rotation
 // challenge, the same honeypot, the same limits, the same error strings.
-export const CONTACT_FORWARD_TO = process.env.CONTACT_FORWARD_TO ?? "test.noreply909@gmail.com";
+// Where form submissions are delivered. No default: the inbox is private and
+// belongs in the PROD_ENV secret, never in the code or anywhere on the site.
+export const CONTACT_FORWARD_TO = (process.env.CONTACT_FORWARD_TO ?? "").trim();
 export const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL ?? CONTACT_EMAIL;
 const SMTP_HOST = process.env.CONTACT_SMTP_HOST ?? "";
 const SMTP_PORT = Number(process.env.CONTACT_SMTP_PORT ?? "587");
@@ -166,6 +168,7 @@ export function clientIp(request: Request, socketAddress?: string): string {
 
 export async function sendContactEmail(data: ContactValues, meta: { ip: string; pageUrl: string }): Promise<void> {
   if (!SMTP_HOST) throw new Error("CONTACT_SMTP_HOST is not configured");
+  if (!CONTACT_FORWARD_TO) throw new Error("CONTACT_FORWARD_TO is not configured");
 
   const transport = nodemailer.createTransport({
     host: SMTP_HOST,
