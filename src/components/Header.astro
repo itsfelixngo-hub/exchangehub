@@ -270,16 +270,25 @@ const navLinks: { label: string; href: string }[] = [
     return true;
   }
 
-  // Restoring the original is not just "translate to en": depending on the
-  // widget version Google either offers the source language in the combo or
-  // drops it entirely (nothing translates English into English), and there is
-  // no API to ask. So try the combo, and when it has no such option fall back
-  // to dropping the cookie and reloading — the page is authored in English,
-  // so it comes back untranslated on its own. Reloading only here keeps the
-  // no-reload behaviour for every actual translation.
-  function restoreOriginal() {
+  // The googtrans cookie is what Google reads on load to translate the page,
+  // so setting it and reloading is the one switch that always lands. Both the
+  // host-only and the domain cookie are written: Google sets both, and a stale
+  // one left behind would win on the next load.
+  function setTranslateCookie(code: string) {
     clearTranslateCookie();
-    return applyLanguage("en");
+    document.cookie = `googtrans=/en/${code};path=/`;
+    document.cookie = `googtrans=/en/${code};path=/;domain=.${location.hostname}`;
+  }
+
+  // The language the page is currently translated into, or null while it is
+  // the English original. Google marks a translated document with a
+  // translated-ltr/-rtl class and records the target in googtrans.
+  function translatedTo(): string | null {
+    const target = document.cookie.match(/(?:^|;\s*)googtrans=\/[^/;]*\/([^;]+)/)?.[1] ?? null;
+    const root = document.documentElement;
+    const marked = root.classList.contains("translated-ltr") || root.classList.contains("translated-rtl");
+    if (target && target !== "en") return target;
+    return marked ? root.lang || "unknown" : null;
   }
 
   function updateToggleUi(option: HTMLElement) {
@@ -349,25 +358,39 @@ const navLinks: { label: string; href: string }[] = [
 
       // Remember the choice first: the server renders this language's country
       // on later loads (the IP guess only decides the first visit), and the
-      // English fallback below reloads, which needs the cookie already set.
+      // reloads below need the cookie already set.
       document.cookie = "site_lang=" + code + ";path=/;max-age=31536000;samesite=lax";
       if (pumpTimer) clearTimeout(pumpTimer);
+      desiredLang = null;
 
       // Start the font download now rather than in commit(), which only runs
       // once Google's widget is ready — this way the face and the translation
       // arrive together instead of one after the other.
       ensureCjkFonts(code);
 
+      // Only a page still in its English original is translated in place.
+      // Driving the widget from one translation to another — or "to English",
+      // which it treats as translating the translated text back rather than
+      // restoring the original — left it in a broken state: the next pick did
+      // nothing and html[lang] read "auto". So any switch away from an
+      // existing translation goes through the cookie and a reload instead.
+      const current = translatedTo();
       if (code === "en") {
-        desiredLang = null;
-        if (!restoreOriginal()) {
-          location.reload();
-          return;
-        }
-        commit("en");
+        clearTranslateCookie();
+        if (current) location.reload();
+        else commit("en");
         return;
       }
-
+      if (current === code) {
+        commit(code);
+        return;
+      }
+      if (current) {
+        setTranslateCookie(code);
+        location.reload();
+        return;
+      }
+      (window as Window & { __loadTranslate?: () => void }).__loadTranslate?.();
       desiredLang = code;
       attempts = 0;
       pump();
