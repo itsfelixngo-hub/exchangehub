@@ -6,6 +6,7 @@ import Layout from "../layouts/Layout.astro";
 import Header from "./Header.astro";
 import Footer from "./Footer.astro";
 import BackToTop from "./BackToTop.astro";
+import AdSlot from "./AdSlot.astro";
 import { buildMenuModel } from "../lib/menu";
 import { buildPairMovers } from "../lib/home";
 import {
@@ -311,6 +312,8 @@ const TOOL_TABS = [
           )}
         </div>
 
+        <AdSlot slot="below-main" style="margin-top:24px;" />
+
         <div class="pair-two-col" style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:24px; margin-top:24px;">
           <div id="converter-table" class="pair-card-pad" style={`${cardBg} border-radius:16px; padding:24px 28px;`}>
             <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
@@ -376,6 +379,8 @@ const TOOL_TABS = [
             )}
           </div>
         </div>
+
+        <AdSlot slot="below-converter" style="margin-top:32px;" />
 
         {isCanonical ? (
           <section id="pair-week" style={`${cardBg} border-radius:16px; padding:24px 28px; margin-top:24px;`}>
@@ -484,6 +489,8 @@ const TOOL_TABS = [
             </div>
           </div>
         )}
+
+        <AdSlot slot="above-footer" style="margin-top:40px;" />
       </div>
     </div>
 

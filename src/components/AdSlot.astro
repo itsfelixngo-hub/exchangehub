@@ -1,0 +1,145 @@
+---
+// One ad position. The box is rendered at its final height on the server so
+// nothing below it moves when the ad arrives; the script further down picks
+// the unit and loads it. The units themselves live in src/lib/ads.ts.
+//
+//   below-main       728x90 on screens 768px and up, 320x50 below that
+//   below-converter  300x250
+//   above-footer     the native banner — at most once per page
+//
+// Renders nothing on a page isAdPage() leaves out, so dropping this into the
+// wrong template cannot put an ad on About or Contact.
+import { isAdPage, type AdSlotName } from "../lib/ads";
+
+interface Props {
+  slot: AdSlotName;
+  /** Spacing around the box, e.g. "margin-top:32px;". */
+  style?: string;
+}
+
+const { slot, style = "" } = Astro.props;
+const show = isAdPage(Astro.url.pathname);
+---
+
+{show && <div class="ad-slot" data-ad-slot={slot} translate="no" style={style}></div>}
+
+<style is:global>
+  /* Theme hooks for the ad boxes. The site has one dark palette today; a
+     light theme only needs to redefine these two. */
+  :root {
+    --ad-slot-bg: rgba(255, 255, 255, 0.03);
+    --ad-slot-placeholder: #57504c;
+  }
+
+  .ad-slot {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    overflow: hidden;
+    background: var(--ad-slot-bg);
+    border-radius: 12px;
+  }
+  /* Heights match the unit each slot loads, so the page does not shift. */
+  .ad-slot[data-ad-slot="below-main"] { min-height: 90px; }
+  .ad-slot[data-ad-slot="below-converter"] { min-height: 250px; }
+  .ad-slot[data-ad-slot="above-footer"] { display: block; min-height: 250px; }
+  @media (max-width: 767px) {
+    .ad-slot[data-ad-slot="below-main"] { min-height: 50px; }
+  }
+
+  /* With ads off (dev, localhost, ?noads=1) the box stays, labelled, so the
+     layout can still be checked. */
+  .ad-slot[data-ad-off]::after {
+    content: attr(data-ad-off);
+    color: var(--ad-slot-placeholder);
+    font: 600 12px/1 'Manrope', Arial, sans-serif;
+  }
+  .ad-slot[data-ad-slot="above-footer"][data-ad-off] {
+    display: flex;
+  }
+</style>
+
+<script>
+  import {
+    BANNER_300x250,
+    BANNER_320x50,
+    BANNER_728x90,
+    NATIVE_BANNER,
+    bannerSnippet,
+    type BannerUnit,
+  } from "../lib/ads";
+
+  // Off in `astro dev`, on any local host, and with ?noads=1 — the last so
+  // the live site can be checked without counting an impression.
+  function adsOffReason(): string | null {
+    if (import.meta.env.DEV) return "dev";
+    const host = location.hostname;
+    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host.endsWith(".local")) return "localhost";
+    if (new URLSearchParams(location.search).get("noads") === "1") return "noads=1";
+    return null;
+  }
+
+  // Each banner in an iframe of its own: Adsterra's snippet sets a global
+  // `atOptions`, and two banners sharing a document would overwrite each
+  // other's before their scripts read it.
+  function mountBanner(slot: HTMLElement, unit: BannerUnit) {
+    const frame = document.createElement("iframe");
+    frame.width = String(unit.width);
+    frame.height = String(unit.height);
+    frame.title = "Advertisement";
+    frame.setAttribute("scrolling", "no");
+    frame.style.cssText = "display:block; border:0; max-width:100%;";
+    frame.srcdoc =
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      "<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent;}</style>" +
+      "</head><body>" + bannerSnippet(unit) + "</body></html>";
+    slot.append(frame);
+  }
+
+  // The native banner script fills the element with its container id, so it
+  // goes straight into the page, once.
+  function mountNative(slot: HTMLElement) {
+    if (document.getElementById(NATIVE_BANNER.containerId)) return;
+    const script = document.createElement("script");
+    script.async = true;
+    script.setAttribute("data-cfasync", "false");
+    script.src = NATIVE_BANNER.src;
+    const container = document.createElement("div");
+    container.id = NATIVE_BANNER.containerId;
+    slot.append(script, container);
+  }
+
+  const slots = Array.from(document.querySelectorAll<HTMLElement>(".ad-slot[data-ad-slot]"));
+  const off = adsOffReason();
+  // Measured once, on load: only the unit for this screen is ever requested.
+  // Hiding the other with CSS would still count it as an impression.
+  const wide = window.matchMedia("(min-width: 768px)").matches;
+  let nativeDone = false;
+
+  for (const slot of slots) {
+    const name = slot.dataset.adSlot;
+    let unit: BannerUnit | null = null;
+    if (name === "below-main") {
+      // A 768px tablet has less than 728px between its gutters; 320x50 fits.
+      unit = wide && slot.clientWidth >= BANNER_728x90.width ? BANNER_728x90 : BANNER_320x50;
+      slot.style.minHeight = `${unit.height}px`;
+    } else if (name === "below-converter") {
+      unit = BANNER_300x250;
+    } else if (name !== "above-footer" || nativeDone) {
+      continue;
+    } else {
+      nativeDone = true;
+    }
+
+    if (off) {
+      slot.dataset.adOff = `Ad ${unit ? `${unit.width}x${unit.height}` : "native"} (off: ${off})`;
+      continue;
+    }
+    if (unit) mountBanner(slot, unit);
+    else mountNative(slot);
+  }
+</script>

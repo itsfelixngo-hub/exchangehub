@@ -5,6 +5,7 @@ import Layout from "../layouts/Layout.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import BackToTop from "../components/BackToTop.astro";
+import AdSlot from "../components/AdSlot.astro";
 import SortFilterBar from "../components/SortFilterBar.astro";
 import { buildHomeModel, buildQuoteRateRows } from "../lib/home";
 import { buildMenuModel } from "../lib/menu";
@@ -232,6 +233,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             <span>We use the mid-market rate for this converter. It is for informational purposes only.</span>
           </div>
         </div>
+        <AdSlot slot="below-converter" style="margin-top:32px;" />
         <!-- Read by both this page's scripts; see currencyMeta above. -->
         <script type="application/json" id="currency-meta" is:inline set:html={currencyMeta} />
         <script>
@@ -545,6 +547,7 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             </div>
           </div>
         </div>
+        <AdSlot slot="below-main" style="margin-top:32px;" />
 
         <script>
           import { wireSortFilter } from "../scripts/sort-filter";
@@ -753,6 +756,10 @@ const description = "Compare popular currencies against USD, EUR, JPY, GBP, CNY,
             applyLangToBoard(document.documentElement.dataset.siteLang);
           })();
         </script>
+      </div>
+
+      <div class="page-pad" style="max-width:1280px; margin:0 auto; padding:0 40px 56px;">
+        <AdSlot slot="above-footer" />
       </div>
     </div>
 
