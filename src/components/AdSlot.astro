@@ -8,8 +8,10 @@
 //   above-footer     the native banner — at most once per page
 //
 // Renders nothing on a page isAdPage() leaves out, so dropping this into the
-// wrong template cannot put an ad on About or Contact.
+// wrong template cannot put an ad on About or Contact — nor for a visitor
+// from a country in ADS_BLOCKED_COUNTRIES (Vietnam by default).
 import { isAdPage, type AdSlotName } from "../lib/ads";
+import { adsBlockedFor } from "../lib/geo";
 
 interface Props {
   slot: AdSlotName;
@@ -18,7 +20,7 @@ interface Props {
 }
 
 const { slot, style = "" } = Astro.props;
-const show = isAdPage(Astro.url.pathname);
+const show = isAdPage(Astro.url.pathname) && !adsBlockedFor(Astro.request);
 ---
 
 {show && <div class="ad-slot" data-ad-slot={slot} translate="no" style={style}></div>}

@@ -14,6 +14,24 @@ export function getIpCountry(request: Request): string | null {
   return country;
 }
 
+// Countries that are shown no ads, as comma-separated ISO codes in
+// ADS_BLOCKED_COUNTRIES. Unset means Vietnam; set it empty to show ads
+// everywhere. Safe to decide per request because every HTML page is sent
+// `Cache-Control: private` (src/middleware.ts), so Cloudflare never hands one
+// country's render to another. A visitor whose country Cloudflare cannot
+// resolve is shown ads.
+const ADS_BLOCKED_COUNTRIES = new Set(
+  (process.env.ADS_BLOCKED_COUNTRIES ?? "VN")
+    .split(",")
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean),
+);
+
+export function adsBlockedFor(request: Request): boolean {
+  const country = getIpCountry(request);
+  return country !== null && ADS_BLOCKED_COUNTRIES.has(country);
+}
+
 // Only covers countries whose currency is one we actually carry a rate for
 // (CURRENCY_PROFILES in config.ts).
 const CURRENCY_COUNTRIES: Record<string, string[]> = {
